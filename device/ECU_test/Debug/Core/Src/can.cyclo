@@ -1,0 +1,5 @@
+../Core/Src/can.c:20:6:MX_CAN1_Init	2
+../Core/Src/can.c:52:6:HAL_CAN_MspInit	2
+../Core/Src/can.c:91:6:HAL_CAN_MspDeInit	2
+../Core/Src/can.c:120:5:CAN1_Joyang_Setup	8
+../Core/Src/can.c:158:6:LWS_Send_Command	1
