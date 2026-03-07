@@ -1,0 +1,8 @@
+../Core/Src/main.c:80:19:ADXL345_WriteRegister	32	static
+../Core/Src/main.c:86:19:ADXL345_Init	40	static
+../Core/Src/main.c:114:19:ADXL345_Read	48	static
+../Core/Src/main.c:141:5:main	80	static
+../Core/Src/main.c:242:6:SystemClock_Config	88	static
+../Core/Src/main.c:286:6:HAL_CAN_RxFifo0MsgPendingCallback	16	static
+../Core/Src/main.c:306:6:HAL_UART_RxCpltCallback	16	static
+../Core/Src/main.c:337:6:Error_Handler	4	static,ignoring_inline_asm

@@ -1,0 +1,8 @@
+../Core/Src/main.c:80:19:ADXL345_WriteRegister	1
+../Core/Src/main.c:86:19:ADXL345_Init	5
+../Core/Src/main.c:114:19:ADXL345_Read	2
+../Core/Src/main.c:141:5:main	4
+../Core/Src/main.c:242:6:SystemClock_Config	3
+../Core/Src/main.c:286:6:HAL_CAN_RxFifo0MsgPendingCallback	4
+../Core/Src/main.c:306:6:HAL_UART_RxCpltCallback	4
+../Core/Src/main.c:337:6:Error_Handler	1
