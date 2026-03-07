@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ajou Future Automobile</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="shortcut icon" href="assets/favicon.svg" type="image/x-icon">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
+    @font-face {
+      font-family: 'S-CoreDream-4Regular';
+      src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-4Regular.woff') format('woff');
+    }
+    @font-face {
+      font-family: 'S-CoreDream-5Medium';
+      src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-5Medium.woff') format('woff');
+    }
+    @font-face {
+      font-family: 'S-CoreDream-6Bold';
+      src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-6Bold.woff') format('woff');
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Nanum Gothic', sans-serif;
+    }
+
+    .video-background {
+      position: fixed;
+      right: 0;
+      bottom: 0;
+      min-width: 100%;
+      min-height: 100%;
+      z-index: -1;
+      filter: brightness(0.5);
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 80vmin;
+      height: 80vmin;
+      text-align: center;
+      z-index: 1;
+      position: relative;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 20px;
+      border-radius: 20px;
+    }
+
+    .logo {
+      width: 60%;
+      margin-bottom: 20px;
+    }
+
+    .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .button {
+      display: inline-block;
+      width: 200px;
+      padding: 15px 0;
+      text-align: center;
+      text-decoration: none;
+      color: white;
+      border-radius: 30px;
+      font-size: 18px;
+      font-weight: bold;
+      transition: background-color 0.3s, transform 0.3s;
+    }
+
+    .button.red { background-color: #e74c3c; }
+    .button.red:hover { background-color: #c0392b; transform: scale(1.05); }
+
+    .button.yellow { background-color: #f1c40f; }
+    .button.yellow:hover { background-color: #f39c12; transform: scale(1.05); }
+
+    .button.green { background-color: #2ecc71; }
+    .button.green:hover { background-color: #27ae60; transform: scale(1.05); }
+
+    .button.blue { background-color: #3498db; }
+    .button.blue:hover { background-color: #2980b9; transform: scale(1.05); }
+
+    .button.purple { background-color: #9b59b6; }
+    .button.purple:hover { background-color: #8e44ad; transform: scale(1.05); }
+  </style>
+</head>
+<body>
+  <video autoplay muted loop class="video-background">
+    <source src="assets/background.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+
+  <div class="container">
+    <img src="assets/logo-transparent.png" alt="Ajou Future Automobile" class="logo">
+    <div class="buttons">
+     <a href="live.html" class="button red">실시간 원격 계측 허브</a>
+     <a href="review/index.html" class="button yellow">계측 로그 리뷰</a>
+      <a href="https://afa2025.ddns.net/stream.html" class="button green">전지적 자동차 시점</a>
+      <a href="https://afa2025.ddns.net/review/video.html" class="button blue">녹화 영상 보기</a> 
+      <a href="https://github.com/Ju-Daeng-E" class="button purple">GitHub</a>
+    </div>
+  </div>
+</body>
+</html>

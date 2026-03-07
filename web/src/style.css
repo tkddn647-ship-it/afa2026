@@ -1,0 +1,1120 @@
+﻿@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
+@font-face {
+  font-family: 'S-CoreDream-4Regular';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-4Regular.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'S-CoreDream-5Medium';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-5Medium.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'S-CoreDream-6Bold';
+  src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-6Bold.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Nanum Gothic', sans-serif;
+  background: linear-gradient(to bottom, rgba(51, 60, 85, 0.7), rgba(3, 4, 9, 0.9));
+  background-attachment: fixed; 
+  background-repeat: no-repeat;
+  background-size: cover;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+body {
+  min-height: 100vh; 
+  overflow-y: auto;
+  height: auto;
+  border-radius: 10px;
+}
+
+#logo {
+  position: relative; 
+  text-align: center;
+  max-width: 414px;
+  margin: auto;
+}
+
+#logo::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  
+  width: 80%; 
+  padding-top: 80%; 
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.05), transparent);
+  filter: blur(12px);
+  z-index: 0;
+}
+
+#logo img {
+  position: relative; 
+  z-index: 1;
+  width: 70%;
+}
+
+
+div#container, div#header {
+  padding: 1rem;
+  padding-top: 0rem;
+  display: flex;
+  max-width: none;
+  flex-wrap: wrap;
+}
+div#container {
+  justify-content: space-evenly;
+}
+div#header {
+  padding-top: 1rem;
+  padding-bottom: 0rem;
+  justify-content: space-between;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 1rem 3rem;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  border-radius: 20px;
+  max-width: 414px;
+  margin: auto;
+  overflow: visible; 
+  position: relative; 
+  color: white;
+}
+
+
+
+header::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 20px;
+  padding: 1px; 
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.4));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.header-btn {
+  background-color: transparent;
+  color: white;
+  border: 1px solid white;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.header-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+
+#log-control button {
+  background: linear-gradient(135deg, #2e3440, #3b4252); 
+  color: #e0e0e0;
+  border: none;
+  padding: 14px 28px !important;
+  margin-bottom: 20px;
+  font-size: 18px !important;
+  border-radius: 14px !important;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 6px 6px 12px rgba(0, 0, 0, 0.2), -6px -6px 12px rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease-in-out;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+#log-control button:hover {
+  background: linear-gradient(135deg, #434c5e, #4c566a);
+  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.2), -4px -4px 8px rgba(255, 255, 255, 0.05);
+}
+
+#log-control button:active {
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+
+
+#log-control button.stop {
+  background: linear-gradient(145deg, #E53935, #D32F2F) !important;
+}
+
+div.status {
+  display: inline-block;
+  text-align: center;
+}
+
+div.status.left {
+  margin-right: 2rem;
+}
+
+div.status.right {
+  margin-left: 2rem;
+}
+
+div.fault-indicator {
+  width:98%;
+  text-align: center;
+  margin-top: 0.5rem;
+  margin-bottom: 0rem;
+
+  
+  background-color:  rgba(10, 14, 35, 0.867);
+  padding: 20px 3px;
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+ 
+ 
+}
+div.status.middle {
+  width: 23%;
+}
+
+div.status.middle.narrow {
+  width: 18%;
+}
+
+div.status.middle.wide {
+  width: 33%;
+}
+
+div.status.middle i {
+  font-size: 1.5rem!important;
+}
+
+div.status.failsafe {
+  width: 13%;
+}
+
+div.status.failsafe.wide {
+  margin: 0px 1.8rem;
+}
+
+div.status.failsafe i {
+  font-size: 1.75rem!important;
+}
+
+div.status div.failsafe-help {
+  transform: scale(.5);
+  margin-left: -.5rem;
+  margin-top: -.2rem;
+}
+
+div.status i {
+  font-size: 1.75rem;
+}
+
+div.status div.text {
+  font-weight: bold;
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
+  color: rgb(25,35,41);
+}
+
+article {
+  position: relative;
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: 20px;
+  min-width: 300px;
+  width: 380px;
+  max-width: 414px;
+
+  
+  background: linear-gradient(
+    to bottom,
+    rgba(6, 11, 40, 0.9),    
+    rgba(10, 14, 35, 0.5),   
+    rgba(10, 14, 35, 0.3)   
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  z-index: 0;
+  overflow: hidden;
+}
+
+
+
+
+
+article::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px; 
+  border-radius: 20px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.4), rgba(255,255,255,0));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+ 
+
+
+article h1 {
+  font-size: 1.7rem;
+  
+  margin: 0;
+  padding: 0.75rem;
+  
+  color: rgb(255, 255, 255);
+  border-radius: 10px;
+}
+
+article h2 {
+  font-size: 1.3rem;
+  color: rgb(255, 255, 255);
+  margin: 0;
+}
+
+article th.param-data h2 {
+  margin-top: -.5rem;
+}
+
+article .content {
+  padding-left: 1rem;
+}
+
+div.toggle_graph label {
+  font-size: .4rem;
+  width: 3rem!important;
+  margin-right: -.3rem;
+  margin-top: .3rem;
+  display: inline-block!important;
+}
+
+div.toggle_graph label.double {
+  width: 6rem!important;
+}
+
+table.param {
+  margin-top: 1rem;
+  width: -webkit-fill-available;
+}
+
+table.param .graph {
+  display: none;
+}
+
+table.param .param-label {
+  color: rgb(65,75,81);
+  text-align: left;
+  vertical-align: baseline;
+  width: 8.3rem;
+}
+
+table.param .param-data h2 {
+  text-align: left;
+  font-family: 'S-CoreDream-6Bold';
+  font-size: 3rem;
+}
+
+table.param .param-unit {
+  font-size: 1rem;
+}
+
+
+table.param .param-subvalue {
+  font-size: 1.75rem;
+}
+
+canvas.graph {
+  display: none;
+  margin-right: 1rem;
+}
+
+table.settings {
+  width: 100%;
+}
+
+table.settings span.btn {
+  width: -webkit-fill-available;
+  height: 2rem;
+  line-height: 2.2rem;
+  font-family: 'S-CoreDream-5Medium';
+}
+
+div.swal2-html-container {
+  word-break: keep-all;
+  line-height: 1.5rem;
+}
+
+.swal2-two-buttons {
+  margin-right: 2rem!important;
+}
+
+code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 85%;
+  background-color: rgba(175, 184, 193, 0.2);
+  border-radius: 6px;
+}
+
+table.dataTable td {
+  font-size: 1rem;
+}
+
+div.failsafe-desc {
+  font-size: 1rem;
+  text-align: left;
+}
+
+ul {
+  margin-top: 0rem;
+  line-height: 1.75rem;;
+}
+
+
+
+.param-graph {
+  margin-top: -50px; 
+  height: 10px; 
+  margin-bottom: -120px;
+}
+
+.speedometer-container {
+  background-color: transparent; 
+  margin-bottom: 0;
+  padding-bottom: 0;
+  margin-right:13px;
+
+}
+.accel-container{
+margin-left:50px;}
+#speedometer {
+  display: block;
+  margin: auto;
+  border: none;
+  padding-bottom: 0; 
+  background-color: transparent; 
+}
+.param-data {
+  margin-top: -30px; 
+}
+
+
+
+.layout {
+  display: flex;
+  
+}
+
+
+.sidebar {
+  position: fixed;
+  top: 10px;
+  bottom:10px;
+  left: 10px;
+  width: 200px;
+  height: 100vh;
+  background-color:   rgba(5, 9, 31, 0.855);
+  color: white;
+  padding: 1rem;
+  z-index: 1000;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  backdrop-filter: blur(10px);
+  justify-content: space-between; 
+  height: 95vh;
+}
+
+
+.sidebar .logo {
+  width: 100%;
+  max-width: 160px;
+}
+
+
+.sidebar .nav {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 1rem;
+}
+.sidebar .nav a span,
+.sidebar .nav span {
+  color: white;
+  text-decoration: none;
+  font-weight: bold;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: background 0.2s;
+  display: inline-block;
+  cursor: pointer;
+}
+.sidebar .nav a:hover span,
+.sidebar .nav span:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+
+.main-content {
+  margin-left: 200px; 
+  width: calc(100% - 200px); 
+  padding: 1rem;
+}
+
+.nav-divider {
+  width: 200px;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgb(255, 255, 255), transparent);
+  opacity: 1;
+}
+
+.sidebar-footer {
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.8rem;
+  color: #aaa;
+}
+.nav {
+  flex-grow: 1; 
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.car-top-view-container {
+  position: relative;
+  width: 300px;
+  margin: 0 auto;
+}
+
+.car-image {
+  width: 59.5%;
+  margin-left: 18%;
+  margin-top: 10px;
+  height: auto;
+  display: block;
+}
+
+.wheel-data {
+  position: absolute;
+  color: white;
+  font-weight: bold;
+  font-size: 1rem;
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.wheel-data .param-value {
+  font-weight: bold;
+  font-size: 40px;
+  margin-left: 4px;
+  margin-right: 2px;
+}
+.front-left {
+  top: 10%;
+  left: -10%;
+}
+
+.front-right {
+  top: 10%;
+  right: -8%;
+}
+
+.rear-left {
+  bottom: 20%;
+  left: -10%;
+}
+
+.rear-right {
+  bottom: 20%;
+  right: -8%;}
+  
+  #excel-control button {
+  background: linear-gradient(135deg, #2e3440, #3b4252); 
+  color: #e0e0e0;
+  border: none;
+  padding: 8px 16px !important; 
+  font-size: 14px !important;   
+  border-radius: 10px !important;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top:5px;
+  margin-right:16px;
+  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.2), -4px -4px 8px rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease-in-out;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+#excel-control button:hover {
+  background: linear-gradient(135deg, #434c5e, #4c566a);
+  box-shadow: 3px 3px 6px rgba(0, 0, 0, 0.2), -3px -3px 6px rgba(255, 255, 255, 0.05);
+}
+
+#excel-control button:active {
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+#hud-record-control button {
+  background: linear-gradient(135deg, #2e3440, #3b4252);
+  color: #e0e0e0;
+  border: none;
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  border-radius: 10px !important;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.2), -4px -4px 8px rgba(255, 255, 255, 0.05);
+  transition: all 0.2s ease-in-out;
+}
+
+#hud-record-control button:hover {
+  background: linear-gradient(135deg, #434c5e, #4c566a);
+}
+
+#hud-record-control button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+#hud-record-download a {
+  color: #9fd3ff;
+  text-decoration: underline;
+}
+
+
+@media (max-width: 768px) {
+    .layout {
+      flex-direction: column;
+    }
+  
+    .sidebar {
+      position: relative;
+      width: 100%;
+      height: auto;
+      border-radius: 0;
+      padding: 1rem;
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+  
+    .main-content {
+      margin-left: 0;
+      width: 100%;
+    }
+  }
+
+
+#container {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  grid-template-rows: auto auto auto;
+  column-gap: 34px;
+  row-gap: 16px;
+  min-height: 82vh;
+  align-items: stretch;
+}
+
+#camera-panel {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  min-height: 82vh;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin-right: 6px;
+}
+
+#camera-panel .content > div:first-child {
+  min-height: 72vh !important;
+  border-radius: 18px !important;
+  padding-right: 200px;
+}
+
+#camera-panel .content {
+  padding-left: 0;
+}
+
+#car {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+  width: 190px;
+  min-width: 190px;
+  max-width: 190px;
+  justify-self: end;
+  align-self: stretch;
+  margin: 12px 12px 12px 0;
+  z-index: 6;
+  background: linear-gradient(to bottom, rgba(6, 11, 40, 0.82), rgba(10, 14, 35, 0.76), rgba(10, 14, 35, 0.62));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  overflow: auto;
+  position: relative;
+}
+
+#car h1 {
+  font-size: 1.15rem;
+  padding: 0.3rem 0.45rem 0.4rem;
+}
+
+#car .nav-divider {
+  width: 100%;
+}
+
+#car .fault-indicator {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 0.3rem;
+  margin-bottom: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+#car .status.middle,
+#car .status.middle.narrow,
+#car .status.middle.wide {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 8px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  text-align: left;
+  background: rgba(10, 14, 35, 0.5);
+}
+
+#car .status.middle i {
+  width: 16px;
+  text-align: center;
+  font-size: 1rem !important;
+}
+
+#car .status.middle .text {
+  margin-top: 0;
+  font-size: 0.85rem;
+  color: #fff;
+}
+
+#car .content {
+  margin-top: 8px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+  padding-left: 0.3rem;
+}
+
+#car table.param {
+  margin-top: 0.2rem;
+}
+
+#car table.param .param-data h2 {
+  font-size: 1.8rem;
+}
+
+#additional-info,
+#hv_batt,
+#motor {
+  grid-column: 2;
+  grid-row: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  margin-left: 12px;
+  padding-bottom: 8px;
+}
+
+#additional-info { grid-row: 1; }
+#hv_batt { grid-row: 2; }
+#motor { grid-row: 3; }
+
+#additional-info .content,
+#hv_batt .content,
+#motor .content {
+  max-height: calc(100% - 70px);
+  overflow: auto;
+  padding-right: 0.3rem;
+}
+
+@media (max-width: 1200px) {
+  #container {
+    grid-template-columns: minmax(360px, 1fr);
+    grid-template-rows: auto;
+    min-height: 0;
+  }
+
+  #camera-panel,
+  #car,
+  #additional-info,
+  #hv_batt,
+  #motor {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  #camera-panel {
+    min-height: 0;
+  }
+
+  #camera-panel .content > div:first-child {
+    min-height: 360px !important;
+    padding-right: 0;
+  }
+
+  #camera-panel {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+
+  #car {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+    justify-self: stretch;
+    align-self: start;
+  }
+
+  #car .content {
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+
+#camera-panel .content {
+  position: relative;
+  padding-left: 0;
+}
+
+#camera-panel .content > div:first-child {
+  padding-right: 0 !important;
+}
+
+#camera-panel #car.camera-hud {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  bottom: 36px;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  z-index: 30;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 0;
+}
+
+#camera-panel #car.camera-hud::before {
+  display: none;
+}
+
+#camera-panel #car.camera-hud > h1,
+#camera-panel #car.camera-hud > .nav-divider {
+  display: none !important;
+}
+
+#camera-panel #car.camera-hud .car-source-hidden {
+  display: none !important;
+}
+
+#camera-panel #car.camera-hud .hud-vehicle-column {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  bottom: 6px;
+  width: 150px;
+  overflow: hidden;
+}
+
+#camera-panel #car.camera-hud .hud-vehicle-column .fault-indicator {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  display: block;
+}
+
+#camera-panel #car.camera-hud .hud-vehicle-column .status.middle,
+#camera-panel #car.camera-hud .hud-vehicle-column .status.middle.narrow,
+#camera-panel #car.camera-hud .hud-vehicle-column .status.middle.wide {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 3px 0;
+  margin: 0;
+  background: transparent;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+}
+
+#camera-panel #car.camera-hud .hud-vehicle-column .status.middle .text {
+  margin-top: 0;
+  font-size: 0.95rem;
+}
+
+#camera-panel #car.camera-hud .hud-instruments {
+  position: absolute;
+  left: 0;
+  right: 170px;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 26px;
+}
+
+#camera-panel #car.camera-hud .hud-accel-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+#camera-panel #car.camera-hud .hud-label {
+  font-size: 1.95rem;
+  color: #fff;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+#camera-panel #car.camera-hud .hud-accel-panel .accel-container {
+  margin-left: 0;
+}
+
+#camera-panel #car.camera-hud .hud-accel-panel #accelCanvas {
+  width: 250px !important;
+  height: 250px !important;
+  border-color: rgba(255, 255, 255, 0.38) !important;
+}
+
+#camera-panel #car.camera-hud .hud-accel-values {
+  margin-top: 8px;
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+#camera-panel #car.camera-hud .hud-speed-panel .speedometer-container {
+  margin-right: 0;
+}
+
+#camera-panel #car.camera-hud .hud-speed-panel #speedometer {
+  width: 360px !important;
+  height: 180px !important;
+}
+
+#camera-panel #car.camera-hud .hud-meta-panel {
+  position: absolute;
+  left: 0;
+  bottom: -66px;
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+
+#camera-hud-root {
+  position: absolute;
+  inset: 8px 8px 42px 8px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+#camera-hud-root .hud-title {
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+#camera-hud-root .hud-vehicle-column > .hud-title {
+  display: none;
+}
+
+#camera-hud-root .hud-accel-panel > .hud-title,
+#camera-hud-root .hud-speed-panel > .hud-title {
+  display: none;
+}
+
+#camera-hud-root .hud-vehicle-column {
+  position: absolute;
+  top: 18px;
+  right: 0;
+  bottom: 0;
+  width: 150px;
+  overflow: hidden;
+}
+
+#camera-hud-root .hud-vehicle-column .fault-indicator {
+  background: transparent;
+  box-shadow: none;
+  margin: 0;
+  padding: 0;
+}
+
+#camera-hud-root .hud-vehicle-column .status.middle,
+#camera-hud-root .hud-vehicle-column .status.middle.narrow,
+#camera-hud-root .hud-vehicle-column .status.middle.wide {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 3px 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+#camera-hud-root .hud-vehicle-column .status.middle .text {
+  margin-top: 0;
+  color: #fff;
+}
+
+#camera-hud-root .hud-accel-panel {
+  position: absolute;
+  left: 0;
+  bottom: 110px;
+}
+
+#camera-hud-root .hud-accel-panel .accel-container {
+  margin-left: 0;
+}
+
+#camera-hud-root #accelCanvas {
+  width: 220px !important;
+  height: 220px !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+#camera-hud-root .hud-accel-values {
+  margin-top: 8px;
+  color: #fff;
+  font-size: 1.8rem;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+#camera-hud-root .hud-speed-panel {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 8px;
+}
+
+#camera-hud-root #speedometer {
+  width: 330px !important;
+  height: 165px !important;
+}
+
+#camera-hud-root .hud-meta-panel {
+  position: absolute;
+  left: 0;
+  bottom: 6px;
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+
+#additional-info,
+#hv_batt,
+#motor {
+  height: auto;
+  min-height: 250px;
+}
+
+#additional-info .content,
+#hv_batt .content,
+#motor .content {
+  max-height: none;
+  overflow: visible;
+  padding-bottom: 10px;
+}
+
+#additional-info h1,
+#hv_batt h1,
+#motor h1 {
+  font-size: 1.35rem;
+  padding: 0.45rem;
+}
+
+#additional-info .content,
+#hv_batt .content,
+#motor .content {
+  max-height: calc(100% - 58px);
+}
+
+.wheel-data .wheel-mm {
+  white-space: nowrap;
+}
+
+.wheel-data .wheel-rpm {
+  margin-top: 4px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #d6deff;
+  white-space: nowrap;
+}
+
+.wheel-data .wheel-rpm-value {
+  font-size: 1.55rem;
+  font-weight: 700;
+  margin-left: 4px;
+  margin-right: 2px;
+}
+

@@ -1,0 +1,65 @@
+<!-- login.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Stream Login</title>
+  <style>
+    body {
+      background-color: #111;
+      color: white;
+      font-family: 'Nanum Gothic', sans-serif;
+      text-align: center;
+      padding-top: 100px;
+    }
+    input[type="password"] {
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: none;
+      outline: none;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #f1c40f;
+      color: black;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+    button:hover {
+      background-color: #f39c12;
+    }
+  </style>
+</head>
+<body>
+  <h2>스트리밍 페이지 접근</h2>
+  <form id="login-form">
+    <input type="password" id="password" placeholder="비밀번호 입력" required />
+    <button type="submit">입장</button>
+  </form>
+  <p id="error-msg" style="color:red"></p>
+
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const password = document.getElementById("password").value;
+
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password })
+      });
+
+      if (res.ok) {
+        // 인증 성공 시 스트리밍 페이지로 이동
+        window.location.href = "/stream.html";
+      } else {
+        document.getElementById("error-msg").textContent = "비밀번호가 올바르지 않습니다.";
+      }
+    });
+  </script>
+</body>
+</html>

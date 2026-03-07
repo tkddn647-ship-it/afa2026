@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>A-FA Video Viewer</title>
+  <link rel="shortcut icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #fefefe;
+      color: #222;
+      text-align: center;
+      font-family: 'Nanum Gothic', sans-serif;
+    }
+
+    .logo {
+      width: 180px;
+      margin: 30px auto 10px;
+      cursor: pointer;
+    }
+
+    h2 {
+      margin-top: 10px;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    .container {
+      margin-top: 30px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .video-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    select {
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      background-color: #fff;
+      color: #333;
+    }
+
+    #delete-btn {
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 10px;
+      background-color: red;
+      color: white;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #delete-btn:hover {
+      background-color: darkred;
+    }
+
+    video {
+      width: 80%;
+      max-width: 1024px;
+      border: 3px solid #3498db;
+      border-radius: 12px;
+      background-color: #000;
+    }
+
+    .btn {
+      padding: 14px 28px;
+      font-size: 16px;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      font-weight: bold;
+      text-decoration: none;
+      color: white;
+      transition: 0.3s ease;
+    }
+
+    .btn.yellow { background-color: #f1c40f; }
+    .btn.yellow:hover { background-color: #f39c12; }
+
+    .footer-buttons {
+      margin: 40px auto;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    @media (max-width: 1000px) {
+      video { width: 100%; height: auto; }
+      .footer-buttons { flex-direction: column; gap: 15px; }
+      .video-controls { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <a href="/"><img src="/assets/A-FA.png" alt="A-FA Logo" class="logo"></a>
+  <h2>녹화 영상 확인 페이지</h2>
+
+  <div class="container">
+    <div class="video-controls">
+      <select id="video-list">
+        <option value="">녹화된 영상을 선택하세요</option>
+      </select>
+      <button id="delete-btn">삭제</button>
+    </div>
+    <video id="player" controls>
+      <source src="" type="video/mp4">
+      브라우저가 video 태그를 지원하지 않습니다.
+    </video>
+  </div>
+
+  <div class="footer-buttons">
+    <a href="/stream.html" class="btn yellow">전지적 자동차 시점</a>
+    <a href="/review" class="btn yellow">로그 리뷰 페이지</a>
+  </div>
+
+  <script>
+    async function fetchVideoList() {
+      try {
+        const response = await fetch('/api/record/list');
+        const files = await response.json();
+        const select = document.getElementById("video-list");
+        select.innerHTML = '<option value="">녹화된 영상을 선택하세요</option>';
+        files.forEach(file => {
+          const option = document.createElement("option");
+          option.value = file;
+          option.textContent = file;
+          select.appendChild(option);
+        });
+      } catch (err) {
+        alert("영상 목록을 불러오지 못했습니다.");
+        console.error(err);
+      }
+    }
+
+    document.getElementById("video-list").addEventListener("change", function () {
+      const selected = this.value;
+      const player = document.getElementById("player");
+      if (selected) {
+        player.src = "/recorded/" + selected;
+        player.load();
+        player.play();
+      }
+    });
+
+    document.getElementById("delete-btn").addEventListener("click", async () => {
+      const selected = document.getElementById("video-list").value;
+      if (!selected) return alert("삭제할 영상을 선택하세요.");
+      if (!confirm(`정말로 "${selected}" 파일을 삭제하시겠습니까?`)) return;
+
+      try {
+        const response = await fetch(`/api/record/${encodeURIComponent(selected)}`, { method: "DELETE"});
+        const result = await response.json();
+        if (response.ok) {
+          alert("✅ 삭제 완료");
+          await fetchVideoList();
+          document.getElementById("player").src = "";
+        } else {
+          alert("❌ 삭제 실패: " + result.message);
+        }
+      } catch (err) {
+        alert("❌ 삭제 요청 중 오류 발생");
+        console.error(err);
+      }
+    });
+
+    fetchVideoList();
+  </script>
+</body>
+</html>
