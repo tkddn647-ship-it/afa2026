@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>A-FA Stream View</title>
+  <link rel="shortcut icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #000000;
+      color: white;
+      text-align: center;
+      font-family: 'Nanum Gothic', sans-serif;
+    }
+
+    .logo {
+      width: 180px;
+      margin: 30px auto 10px;
+      cursor: pointer;
+    }
+
+    h2 {
+      margin-top: 10px;
+      font-size: 24px;
+      font-weight: bold;
+    }
+
+    #remote-video {
+      margin-top: 20px;
+      width: 960px;
+      height: 540px;
+      border: 3px solid #f1c40f;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0);
+    }
+
+    .footer-buttons {
+      margin: 40px auto;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+    }
+
+    .btn {
+      padding: 14px 28px;
+      font-size: 16px;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      font-weight: bold;
+      text-decoration: none;
+      color: white;
+      transition: 0.3s ease;
+    }
+
+    .btn.yellow {
+      background-color: #f1c40f;
+    }
+
+    .btn.yellow:hover {
+      background-color: #f39c12;
+    }
+
+    .btn.purple {
+      background-color: #9b59b6;
+    }
+
+    .btn.purple:hover {
+      background-color: #8e44ad;
+    }
+
+    @media (max-width: 1000px) {
+      #remote-video {
+        width: 100%;
+        height: auto;
+      }
+
+      .footer-buttons {
+        flex-direction: column;
+        gap: 15px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- 로고 클릭 시 홈 이동 -->
+  <a href="/">
+    <img src="assets/A-FA.png" alt="A-FA Logo" class="logo">
+  </a>
+
+  <h2>WebRTC Live Stream</h2>
+  <video id="remote-video" autoplay playsinline muted></video>
+
+  <!-- 하단 버튼 -->
+  <div class="footer-buttons">
+    <a href="/live.html" class="btn yellow">실시간 계측 페이지</a>
+    <a href="/review" class="btn purple">로그 리뷰 페이지</a>
+  </div>
+
+  <!-- Load Ion SDK and JSON-RPC -->
+  <script src="/js/ion-sdk.min.js"></script>
+  <script src="/js/json-rpc.min.js"></script>
+
+  
+  <script>
+    document.addEventListener("DOMContentLoaded", async function () {
+      console.log("Viewer page loaded");
+
+      if (!window.IonSDK || !window.Signal) {
+        console.error("Ion SDK or Signal is missing.");
+        return;
+      }
+      const config = {
+          codec: "vp8",
+          iceServers: [
+            {
+              urls: ['turn:afa2025.ddns.net:3478?transport=udp', 'turn:afa2025.ddns.net:3478?transport=tcp'],
+              username: 'pion',
+              credential: 'ion'
+            }
+          ],
+          iceTransportPolicy: "relay"
+
+        };
+      const signal = new Signal.IonSFUJSONRPCSignal("wss://afa2025.ddns.net/ws");
+      const client = new IonSDK.Client(signal,config);
+      const remoteVideo = document.getElementById("remote-video");
+
+      const receivedStream = new MediaStream();
+      remoteVideo.srcObject = receivedStream;
+      
+      console.log("Client initialized:", client);
+      if(signal){
+        console.log("signal", signal);
+      }else{
+        console.err("No signal");
+      }
+
+      signal.socket.addEventListener("message", (e) => {
+        console.log("📨 WebSocket 메시지 수신:", e.data);
+      });
+      client.ontrack = (track, stream) => {
+        console.log("[Client] Received track:", track);
+        const alreadyExists = receivedStream.getTracks().some(t => t.id === track.id);
+        if (!alreadyExists) {
+          receivedStream.addTrack(track);
+        }
+        remoteVideo.play().catch(err => console.error("❌ Video play failed:", err));
+      };
+
+      client.onerrnegotiate = (role, err) => {
+        console.error("[Client] Negotiation error:", role, err);
+      };
+
+      signal.onopen = async () => {
+        console.log("[Signal] Connected to signaling server");
+
+        console.log("🧪 signal.socket 상태 확인:", signal.socket ?? "없음");
+        console.log("🧪 signal._conn 상태 확인:", signal._conn ?? "없음");
+
+        await client.join("test-room", "viewer");
+        setTimeout(() => {
+  const sub = client.transports?.sub;
+  if (!sub) {
+    console.warn("❌ sub transport가 아직 생성되지 않음");
+    return;
+  }
+
+  const pc = sub.pc;
+  if (!pc) {
+    console.warn("❌ sub.pc가 아직 없음");
+    return;
+  }
+
+  console.log("🧊 초기 ICE 상태:", pc.iceConnectionState);
+
+  pc.addEventListener("iceconnectionstatechange", () => {
+    console.log("🧊 ICE 상태 변경됨:", pc.iceConnectionState);
+  });
+  }, 1000); // join 이후 내부 트랜스포트 구성 기다림
+
+        client.transports?.sub?.pc?.addEventListener("iceconnectionstatechange", () => {
+          console.log("🧊 ICE Connection State:", client.transports.sub.pc.iceConnectionState);
+        });
+        if (client.transports?.pub) delete client.transports.pub;
+
+
+        signal.onclose = () => {
+          console.warn("🔌 시그널링 서버 연결 끊김 - 재접속 시도 중");
+          setTimeout(() => window.location.reload(), 2000);
+        };
+        
+        console.log("Viewer ready");
+      };
+    });
+  </script>
+</body>
+</html>

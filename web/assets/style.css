@@ -1,0 +1,115 @@
+@import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
+@font-face {
+    font-family: 'S-CoreDream-4Regular';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-4Regular.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'S-CoreDream-5Medium';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-5Medium.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+@font-face {
+    font-family: 'S-CoreDream-6Bold';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_six@1.2/S-CoreDream-6Bold.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #000000;
+    margin: 0;
+    font-family: 'Nanum Gothic', sans-serif;
+}
+
+.container {
+    text-align: center;
+    background: #fff;
+    padding: 50px;
+    border-radius: 15px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    width: 90%;
+}
+
+.logo {
+    width: 80%;
+    margin-bottom: 30px;
+}
+
+.buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+}
+
+.button {
+    display: inline-block;
+    width: 250px; /* 고정된 너비 */
+    padding: 20px 0; /* 패딩을 늘려서 더 크고 일정하게 만듭니다 */
+    text-align: center;
+    text-decoration: none;
+    color: white;
+    border-radius: 30px;
+    font-size: 20px; /* 폰트 크기를 키웁니다 */
+    font-weight: bold;
+    transition: background-color 0.3s, transform 0.3s;
+}
+
+.button.blue {
+    background-color: #3498db;
+}
+
+.button.blue:hover {
+    background-color: #2980b9;
+    transform: scale(1.05);
+}
+
+.button.yellow {
+    background-color: #f1c40f;
+}
+
+.button.yellow:hover {
+    background-color: #f39c12;
+    transform: scale(1.05);
+}
+
+.button.purple {
+    background-color: #9b59b6;
+}
+
+.button.purple:hover {
+    background-color: #8e44ad;
+    transform: scale(1.05);
+}
+
+.button.green {
+    background-color: #27ae60;
+}
+
+.button.green:hover {
+    background-color: #219150;
+    transform: scale(1.05);
+}
+
+.button.red {
+    background-color: #e74c3c;
+}
+
+.button.red:hover {
+    background-color: #c0392b;
+    transform: scale(1.05);
+}
+#speedometer {
+    display: block;
+    margin: auto;
+    border: 1px solid #000; /* 캔버스의 표시를 확인하기 위해 경계선을 추가 */
+  }
+  

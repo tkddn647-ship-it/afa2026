@@ -1,0 +1,1328 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8">
+    <title>A-FA TELEMETRY CONTROL</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <meta property="og:title" content="A-FA TELEMETRY CONTROL"/>
+    <meta property="og:url" content="https://afa2025.ddns.net/live"/>
+    <meta property="og:image" content="https://afa2025.ddns.net/assets/A-FA.jpeg"/>
+    <meta property="og:description" content=" "/>
+   
+    <link rel="stylesheet" href="src/style.css">
+    <link rel="stylesheet" href="src/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="src/toggleSwitch/toggleSwitch.css">
+    <link rel="stylesheet" href="src/btn/btn.css">
+    <link rel="stylesheet" href="//cdn.datatables.net/1.12.1/css/jquery.dataTables.min.css">
+    <link rel="shortcut icon" href="assets/favicon.svg" type="image/x-icon">
+    <style>
+     #additional-info .param td, #additional-info .param th {
+        padding-bottom: 20px;
+      }
+      /* 로그 기록 버튼 위치 */
+      #log-control {
+        display: inline-block;
+        margin-right: 10px;
+        vertical-align: middle;
+      }
+      #log-control button {
+        padding: 5px 10px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+  </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <a href="/"><img src="assets/logo-transparent.png" class="logo" /></a>
+        <div class="nav-divider"></div>
+        
+        <nav class="nav">
+          <a href="review/" target="_blank">
+            <span ><i class="fa-solid fa-fw fa-database"></i>&ensp;REVIEW</span>
+          </a>
+       
+          <span id="livecan" >
+            <i class="fa-solid fa-fw fa-tv"></i>&ensp;LIVE CAN
+          </span>
+       
+          <a href="https://github.com/A-FA-2025/monolith" target="_blank">
+            <span ><i class="fa-brands fa-fw fa-github"></i>&ensp;CODE</span>
+          </a>
+       
+          <!--<span id="reset" >
+            <i class="fa-solid fa-fw fa-triangle-exclamation"></i>&ensp;초기화
+          </span>
+          <span id="toggle-all-graphs" >
+            <i class="fa-solid fa-fw fa-chart-line"></i>&ensp;그래프 전체 on/off
+          </span>-->
+          <a href="https://afa2025.ddns.net/stream.html" target="_blank">
+            <span >
+              <i class="fa-solid fa-fw fa-car-side"></i>&ensp;전자직 자동차 시점
+            </span>
+          </a>
+       
+          <!-- 추가 메뉴 2: 녹화 영상 보기 -->
+          <a href="https://afa2025.ddns.net/review/video.html" target="_blank">
+            <span >
+              <i class="fa-solid fa-fw fa-car-side"></i>&ensp;녹화 영상 보기
+            </span>
+          </a>
+        </nav>
+        <div class="sidebar-footer">
+       
+
+        <div id="log-control">
+          <button id="start-log-recording">log start</button>
+        </div>
+        <div id="excel-control" style="display:inline-block; margin-left:10px; vertical-align:middle;">
+    <button id="start-excel-recording">데이터 기록 시작</button>
+    <button id="stop-excel-recording" disabled>데이터 기록 중지</button>
+    <div id="excel-download" style="margin-top:4px;"></div>
+  </div>
+  
+   <!-- 서버 상태 표시 추가 -->
+        <div class="server-status-indicator" style="display: flex; gap: 0.5rem; margin-top: 1rem; margin-bottom: 30px;">
+          <div id="server" class="status left">
+            <i class="fa-solid fa-fw fa-network-wired" style="color: red"></i>
+            <div class="text" style="color: white;">서버</div>
+          </div>
+          <div id="telemetry" class="status right">
+            <i class="fa-duotone fa-fw fa-tower-broadcast" style="color: red"></i>
+            <div class="text" style="color: white;">원격 계측</div>
+          </div>
+        </div>
+
+
+          <p>(c) A-FA E-Formula TW 2025</p>
+        </div>
+       
+      </aside>
+
+      <div class="main-content">
+        <!-- <div id="header">
+          <div id="logo">
+            <a href="/">
+              <img src="assets/logo-transparent.png">
+            </a>
+
+           
+          </div>
+
+          <div id="log-control">
+              <button id="start-log-recording">log start</button>
+            </div>
+
+  <div id="excel-control" style="display:inline-block; margin-left:10px; vertical-align:middle;">
+    <button id="start-excel-recording">엑셀 기록 시작</button>
+    <button id="stop-excel-recording" disabled>엑셀 기록 중지</button>
+    <div id="excel-download" style="margin-top:4px;"></div>
+  </div>
+
+
+
+
+      <header style="margin: auto; max-width: 414px; display: flex; justify-content: space-between; align-items: center;">
+       
+        <div style="display: flex;">
+          <div id="server" class="status left">
+            <i class="fa-solid fa-fw fa-network-wired" style="color: red"></i>
+            <div class="text" style="color: white;">서버</div>
+          </div>
+          <div id="telemetry" class="status right">
+            <i class="fa-duotone fa-fw fa-tower-broadcast" style="color: red"></i>
+            <div class="text" style="color: white;">원격 계측</div>
+          </div>
+        </div>
+      </header>
+     
+    </div>-->
+
+    <div id="container">
+      <article id="car">
+        <h1><i class="fa-solid fa-fw "></i>&ensp;vehicle</h1>
+        <div class="nav-divider"></div>
+
+        <div class="fault-indicator">
+          <div id="lv" class="status middle">
+            <i class="fa-solid fa-fw fa-car-battery" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">LV</div>
+          </div>
+          <div id="hv" class="status middle">
+            <i class="fa-solid fa-fw fa-transformer-bolt" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">HV</div>
+          </div>
+          <div id="rtd" class="status middle">
+            <i class="fa-solid fa-fw fa-car-on" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">RTD</div>
+          </div>
+        </div>
+
+        <div class="fault-indicator">
+          <div id="err" class="status middle narrow">
+            <i class="fa-solid fa fa-ban" style="color: red;"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">ERR</div>
+          </div>
+          <div id="sd" class="status middle narrow">
+            <i class="fa-solid fa-fw fa-sd-card" style="color: red;"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">SD</div>
+          </div>
+          <div id="telemetry" class="status middle narrow">
+            <i class="fa-solid fa-fw fa-ethernet" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">TELEMETRY</div>
+          </div>
+          <div id="can" class="status middle narrow">
+            <i class="fa-solid fa-fw fa-display" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">CAN</div>
+          </div>
+        </div>
+
+        <div class="fault-indicator">
+          <div id="imd" class="status middle">
+            <i class="fa-solid fa-fw fa-monitor-waveform" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">IMD</div>
+          </div>
+          <div id="bms" class="status middle">
+            <i class="fa-solid fa-fw fa-battery-bolt" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">BMS</div>
+          </div>
+          <div id="bspd" class="status middle">
+            <i class="fa-solid fa-fw fa-brake-warning" style="color: red"></i>
+            <div class="text" style="letter-spacing: 1.5px; color: white;">BSPD</div>
+          </div>
+        </div>
+
+        <div class="content">
+          <table class="param">
+            <tr>
+              <th class="param-label">
+                <h2>속도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-speed" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-speed"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-speed" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-speed"></label>
+                </div>
+              </th>
+              <!-- <th class="param-data">
+                <h2><span id="speed" class="param-value">0</span><span class="param-unit">&ensp;km/h</span></h2>
+              </th> -->
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph" >
+                <div class="speedometer-container" >
+                  <canvas id="speedometer" width="300" height="150" style=" background-color: transparent;"></canvas>
+
+                </div>
+              </td>
+            </tr>
+           
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>가속도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-accel2" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-accel2"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-accel2" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-accel2"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span class="param-unit">x &ensp;</span><span id="accel2-x" class="param-value">0</span><span class="param-unit"> &ensp;g</span></h2>
+                <h2><span class="param-unit">y &ensp;</span><span id="accel2-y" class="param-value">0</span><span class="param-unit"> &ensp;g</span></h2>
+                <h2><span class="param-unit">z &ensp;</span><span id="accel2-z" class="param-value">0</span><span class="param-unit"> &ensp;g</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-accel2-x" class="graph" width="100%" height="60vh"></canvas>
+                <canvas id="graph-accel2-y" class="graph" width="100%" height="60vh"></canvas>
+                <canvas id="graph-accel2-z" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph" >
+                <div class="accel-container" >
+                  <canvas id="accelCanvas" width="250" height="250" style="background-color: transparent; border: 1px solid #ccc;"></canvas>
+                </div>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+
+            <tr>
+              <th class="param-label">
+                <h2>ECU 온도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-core-temperature" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-core-temperature"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-core-temperature" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-core-temperature"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="core-temperature" class="param-value">0</span><span class="param-unit">&ensp;℃</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-core-temperature" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>시간</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-uptime" type="checkbox"/>
+                  <label class="tgl-btn double" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-uptime"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2 style="margin-top: -.8rem;"><span id="uptime" class="param-value" style='font-size: 2rem;'>0</span><span class="param-unit">&ensp;ms</span></h2>
+              </th>
+            </tr>
+          </table>
+        </div>
+      </article>
+
+      <article id="additional-info">
+        <h1><i class="fa-solid fa-fw "></i>&ensp;info</h1>
+        <div class="nav-divider"></div>
+        <div class="content">
+          <table class="param">
+            <!-- 엑셀 -->
+            <tr>
+              <th class="param-label">
+                <h2>엑셀</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-accel" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-accel"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-accel" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-accel"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="accel-value" class="param-value">0</span><span class="param-unit">&ensp;</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-accel" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+     
+            <!-- 브레이크 -->
+            <tr>
+              <th class="param-label">
+                <h2>브레이크</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-braking" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-braking"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-braking" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-braking"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="brake-value" class="param-value">0</span><span class="param-unit">&ensp;</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-braking" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+     
+            <!-- 스티어링 각도 -->
+            <tr>
+              <th class="param-label">
+                <h2>스티어링 각도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-steering-angle" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-steering-angle"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-steering-wheel-angle" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-steering-wheel-angle"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="steering-angle" class="param-value">0</span><span class="param-unit">&ensp;°</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-steering-wheel-angle" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+     
+            <!-- 스티어링 속도 -->
+            <tr>
+              <th class="param-label">
+                <h2>스티어링 속도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-steering-speed" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-steering-speed"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-steering-wheel-speed" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-steering-wheel-speed"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="steering-speed" class="param-value">0</span><span class="param-unit">&ensp;°/s</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-steering-wheel-speed" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+
+            <!-- 타이어 온도 -->
+            <tr>
+              <th class="param-label">
+                <h2>타이어 온도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-tie-temp" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-tie-temp"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-tie-temp" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-tie-temp"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span class="param-unit">left&ensp;</span><span id="fronttie-temp" class="param-value">0</span><span class="param-unit">&ensp;℃</span></h2>
+                <h2><span class="param-unit">right&ensp;&ensp;</span><span id="reartie-temp" class="param-value">0</span><span class="param-unit">&ensp;℃</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-tie-temp" class="graph" width="100%" height="60vh"></canvas>
+                <canvas id="graph-tie-temp" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+             
+            </tr>
+
+           <!-- 리니어 오른쪽 앞바퀴 -->
+<!-- <tr>
+ 
+  <th class="param-label">
+
+    <h2>리니어 오른쪽 앞바퀴/h2>
+   
+    <div class="toggle_graph">
+      <input class="tgl tooltips tgl-skewed" id="tooltip-linear-front-right" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-linear-front-right"></label>
+      <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-linear-front-right" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-linear-front-right"></label>
+
+    </div>
+  </th>
+  <th class="param-data">
+   
+    <h2><span id="linear-front-right-value" class="param-value">0</span><span class="param-unit">&ensp;mm</span></h2>
+  </th>
+ 
+</tr>
+<tr>
+  <td colspan="2" class="param-graph">
+    <canvas id="graph-linear-front-right" class="graph" width="100%" height="60vh"></canvas>
+  </td>
+</tr> -->
+
+<!-- 리니어 왼쪽 앞바퀴 -->
+<!-- <tr>
+  <th class="param-label">
+    <h2>리니어 왼쪽 앞바퀴/h2>
+    <div class="toggle_graph">
+      <input class="tgl tooltips tgl-skewed" id="tooltip-linear-front-left" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-linear-front-left"></label>
+      <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-linear-front-left" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-linear-front-left"></label>
+    </div>
+  </th>
+  <th class="param-data">
+    <h2><span id="linear-front-left-value" class="param-value">0</span><span class="param-unit">&ensp;mm</span></h2>
+  </th>
+</tr>
+<tr>
+  <td colspan="2" class="param-graph">
+    <canvas id="graph-linear-front-left" class="graph" width="100%" height="60vh"></canvas>
+  </td>
+</tr> -->
+
+<!-- 리니어 오른쪽 뒷바퀴 -->
+<!-- <tr>
+  <th class="param-label">
+    <h2>리니어 오른쪽 뒷바퀴/h2>
+    <div class="toggle_graph">
+      <input class="tgl tooltips tgl-skewed" id="tooltip-linear-rear-right" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-linear-rear-right"></label>
+      <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-linear-rear-right" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-linear-rear-right"></label>
+    </div>
+  </th>
+  <th class="param-data">
+    <h2><span id="linear-rear-right-value" class="param-value">0</span><span class="param-unit">&ensp;mm</span></h2>
+  </th>
+</tr>
+<tr>
+  <td colspan="2" class="param-graph">
+    <canvas id="graph-linear-rear-right" class="graph" width="100%" height="60vh"></canvas>
+  </td>
+</tr> -->
+
+<!-- 리니어 왼쪽 뒷바퀴 <tr>
+  <th class="param-label">
+    <h2>리니어 왼쪽 뒷바퀴/h2>
+    <div class="toggle_graph">
+      <input class="tgl tooltips tgl-skewed" id="tooltip-linear-rear-left" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-linear-rear-left"></label>
+      <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-linear-rear-left" type="checkbox"/>
+      <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-linear-rear-left"></label>
+    </div>
+  </th>
+  <th class="param-data">
+    <h2><span id="linear-rear-left-value" class="param-value">0</span><span class="param-unit">&ensp;mm</span></h2>
+  </th>
+</tr>
+<tr>
+  <td colspan="2" class="param-graph">
+    <canvas id="graph-linear-rear-left" class="graph" width="100%" height="60vh"></canvas>
+  </td>
+</tr> -->
+
+</table>
+<th class="param-label">
+
+  <h2>리니어</h2>
+  <div class="toggle_graph">
+    <input class="tgl tooltips tgl-skewed" id="tooltip-linear-front-left" type="checkbox"/>
+    <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-linear-front-left"></label>
+    <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-linear-front-left" type="checkbox"/>
+    <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-linear-front-left"></label>
+   
+  </div>
+ 
+    <div class="car-top-view-container">
+    <img src="src/car.svg" alt="Car Top View" class="car-image">
+ 
+    <div class="wheel-data front-left">
+      <div class="wheel-mm">FL <span id="linear-front-left" class="param-value">0</span> mm</div>
+      <div class="wheel-rpm">L <span id="wheel-speed-left" class="wheel-rpm-value">0</span> rpm</div>
+    </div>
+    <div class="wheel-data front-right">
+      <div class="wheel-mm">FR <span id="linear-front-right" class="param-value">0</span> mm</div>
+      <div class="wheel-rpm">R <span id="wheel-speed-right" class="wheel-rpm-value">0</span> rpm</div>
+    </div>
+    <div class="wheel-data rear-left">
+      <div class="wheel-mm">RL <span id="linear-rear-left" class="param-value">0</span> mm</div>
+    </div>
+    <div class="wheel-data rear-right">
+      <div class="wheel-mm">RR <span id="linear-rear-right" class="param-value">0</span> mm</div>
+    </div>
+  </div>  <!-- <div class="toggle_graph">
+    <input class="tgl tooltips tgl-skewed" id="tooltip-linear-front-right" type="checkbox"/>
+    <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-linear-front-right"></label>
+    <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-linear-front-right" type="checkbox"/>
+    <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-linear-front-right"></label>
+
+  </div>
+</th>
+<th class="param-data">
+ 
+  <h2><span id="linear-front-right-value" class="param-value">0</span><span class="param-unit">&ensp;mm</span></h2>
+</th>
+
+</tr>
+<tr>
+<td colspan="2" class="param-graph">
+  <canvas id="graph-linear-front-right" class="graph" width="100%" height="60vh"></canvas>
+</td>
+</tr> -->
+         
+        </div>
+
+      </article>
+           
+     
+      <article id="hv_batt">
+        <h1 style="margin-top: .3rem;"><i class="fa-solid fa-fw "></i>&ensp;HV</h1>
+        <div class="nav-divider"></div>
+
+        <div class="fault-indicator">
+          <div id="voltage-failsafe" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-v" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-voltage-failsafe" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-voltage-failsafe"></label>
+            </div>
+          </div>
+          <div id="current-failsafe" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-a" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-current-failsafe" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-current-failsafe"></label>
+            </div>
+          </div>
+          <div id="relay-failsafe" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-r" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-relay-failsafe" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-relay-failsafe"></label>
+            </div>
+          </div>
+          <div id="balancing-active" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-b" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-balancing-active" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-balancing-active"></label>
+            </div>
+          </div>
+          <div id="interlock-failsafe" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-i" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-interlock-failsafe" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-interlock-failsafe"></label>
+            </div>
+          </div>
+          <div id="thermistor-invalid" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-t" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-thermistor-invalid" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-thermistor-invalid"></label>
+            </div>
+          </div>
+          <div id="input-power-failsafe" class="status failsafe">
+            <i class="fa-solid fa-fw fa-square-p" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-input-power-failsafe" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-input-power-failsafe"></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="content">
+          <table class="param" style="margin-top: 1.2rem;">
+            <tr>
+              <th class="param-label">
+                <h2>잔량</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-battery-percent" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-battery-percent"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-battery-percent" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-battery-percent"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="battery-percent" class="param-value">0</span><span class="param-unit">&ensp;%</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-battery-percent" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>용량</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-battery-capacity" type="checkbox"/>
+                  <label class="tgl-btn double" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-battery-capacity"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="battery-capacity" class="param-value">0</span><span class="param-unit">&ensp;Ah</span></h2>
+              </th>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>전압</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-battery-voltage" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-battery-voltage"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-battery-voltage" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-battery-voltage"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="battery-voltage" class="param-value">0</span><span class="param-unit">&ensp;V</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-battery-voltage" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>전류</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-battery-current" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-battery-current"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-battery-current" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-battery-current"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="battery-current" class="param-value">0</span><span class="param-unit">&ensp;A</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-battery-current" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>DCL</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-dcl" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-dcl"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-dcl" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-dcl"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2>
+                  <span id="dcl" class="param-value">0</span><span class="param-unit">&ensp;A</span>
+                </h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-dcl" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>최고</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-battery-temperature-max" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-battery-temperature-max"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-battery-temperature-max" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-battery-temperature-max"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2>
+                  <span id="battery-temperature-max" class="param-value">0</span><span class="param-unit">&ensp;℃</span>
+                  <span class="param-unit">&nbsp;#</span><span id="battery-temperature-max-id" class="param-subvalue">0</span>
+                </h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-battery-temperature-max" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+
+          </table>
+        </div>
+      </article>
+
+      <article id="motor">
+        <h1>
+          <i class="fa-solid fa-fw "></i>&ensp;motor
+        </h1>
+        <div class="nav-divider"></div>
+
+        <div class="fault-indicator">
+          <div id="precharge" class="status failsafe wide">
+            <i class="fa-solid fa-fw fa-square-p" style="color: red;"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-precharge" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-precharge"></label>
+            </div>
+          </div>
+          <div id="air" class="status failsafe wide">
+            <i class="fa-solid fa-fw fa-square-a" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-air" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-air"></label>
+            </div>
+          </div>
+          <div id="inv_mode" class="status failsafe wide">
+            <i class="fa-solid fa-fw fa-square-x" style="color: red"></i>
+            <div class="failsafe-help">
+              <input class="tgl tooltips tgl-skewed" id="tooltip-inv-mode" type="checkbox"/>
+              <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-inv-mode"></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="content">
+          <table class="param" style="margin-top: 1.4rem;">
+            <tr>
+              <th class="param-label" style="padding-top: .4rem;">
+                <h2><i id='vsm-status-indicator' class="fa-solid fa-fw fa-microwave" style="color: red;"></i>&ensp;VSM
+                </h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-vsm-status" type="checkbox"/>
+                  <label class="tgl-btn double" data-tg-off="세부 정보" data-tg-on="세부 정보" for="tooltip-vsm-status"></label>
+                </div>
+              </th>
+              <th class="param-data" style="text-align: left;">
+                <span id="vsm-status" class="param-subvalue" style="font-size: 1.4rem">N/A</span>
+              </th>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label" style="padding-top: .4rem;">
+                <h2>INV
+                </h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-inverter-status" type="checkbox"/>
+                  <label class="tgl-btn double" data-tg-off="세부 정보" data-tg-on="세부 정보" for="tooltip-inverter-status"></label>
+                </div>
+              </th>
+              <th class="param-data" style="text-align: left;">
+                <span id="inverter-status" class="param-subvalue" style="font-size: 1.4rem">N/A</span>
+              </th>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label" style="padding-top: .4rem;">
+                <h2>RPM</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-rpm" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-rpm"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-rpm" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-rpm"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2><span id="rpm" class="param-value">0</span><span class="param-unit">&ensp;rpm</span></h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-rpm" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>토크</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-motor-torque" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-motor-torque"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-motor-torque" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-motor-torque"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2>
+                  <span id="motor-torque" class="param-value">0</span><span class="param-unit">&ensp;N·m</span>
+                </h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-motor-torque" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>온도</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-motor-temperature" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-motor-temperature"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-motor-temperature" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-motor-temperature"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2>
+                  <span id="motor-temperature" class="param-value">0</span><span class="param-unit">&ensp;℃</span>
+                </h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-motor-temperature" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+            <tr><td>&ensp;</td></tr>
+
+            <tr>
+              <th class="param-label">
+                <h2>IGBT</h2>
+                <div class="toggle_graph">
+                  <input class="tgl tooltips tgl-skewed" id="tooltip-motor-igbt-temperature" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="도움말" data-tg-on="도움말" for="tooltip-motor-igbt-temperature"></label>
+                  <input class="tgl toggle-graph tgl-skewed" id="toggle-graph-motor-igbt-temperature" type="checkbox"/>
+                  <label class="tgl-btn" data-tg-off="그래프" data-tg-on="그래프" for="toggle-graph-motor-igbt-temperature"></label>
+                </div>
+              </th>
+              <th class="param-data">
+                <h2>
+                  <span id="motor-igbt-temperature" class="param-value">0</span><span class="param-unit">&ensp;℃</span>
+                  <span class="param-unit">&nbsp;#</span><span id="motor-igbt-temperature-id" class="param-subvalue">X</span>
+                </h2>
+              </th>
+            </tr>
+            <tr>
+              <td colspan="2" class="param-graph">
+                <canvas id="graph-motor-igbt-temperature" class="graph" width="100%" height="60vh"></canvas>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </article>
+
+     
+      <script src="/socket.io/socket.io.js"></script>
+<!--      <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>-->
+<!--      <script src="src/jquery/jquery-3.6.0.slim.min.js"></script>-->
+<!--      <script src="https://cdn.jsdelivr.net/npm/chart.js@3.8.2/dist/chart.min.js"></script>-->
+<!--      <script src="https://cdn.jsdelivr.net/npm/luxon@1.27.0"></script>-->
+<!--      <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.0.0"></script>-->
+<!--      <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>-->
+<!--      <script src="//cdn.jsdelivr.net/npm/sweetalert2@11"></script>-->
+<!--      <script src="https://cdn.datatables.net/v/dt/dt-1.12.1/r-2.3.0/sl-1.4.0/datatables.min.js"></script>-->
+<!--      <script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=ddcaf8fc1a26bb818a315fc13a869efc&libraries=clusterer,drawing"></script>-->
+<!--      &lt;!&ndash; Chart.js &ndash;&gt;-->
+      <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+      <!-- <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script> -->
+      <!-- <script src="src/jquery/jquery-3.6.0.slim.min.js"></script> -->
+      <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js@3.8.2/dist/chart.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/luxon@1.27.0"></script>
+      <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.0.0"></script>
+      <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
+      <!-- <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+      <script src="//cdn.jsdelivr.net/npm/sweetalert2@11"></script> -->
+      <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+      <script src="https://cdn.datatables.net/v/dt/dt-1.12.1/r-2.3.0/sl-1.4.0/datatables.min.js"></script>
+      <!-- <script src="src/script.js"></script> -->
+      <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+      <!-- Chart.js Streaming Plugin -->
+      <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0/dist/chartjs-plugin-streaming.min.js"></script>
+
+      <!-- Chart.js Date Adapter (Required for time/realtime scale) -->
+      <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+      <script src="src/script.js"></script>
+      <script>
+        let tooltips = {
+  'speed': { title: '차량 속도', desc: '차량의 현재 주행 속도입니다.' },
+  'accel': { title: '엑셀', desc: '가속 페달 입력값입니다.' },
+  'braking': { title: '브레이크', desc: '브레이크 페달 입력값입니다.' },
+  'core-temperature': { title: 'ECU 온도', desc: 'ECU 코어 온도입니다.' },
+  'uptime': { title: '가동 시간', desc: '시스템 가동 경과 시간입니다.' },
+  'battery-percent': { title: 'HV 배터리 잔량', desc: 'HV 배터리 잔량(%)입니다.' },
+  'battery-voltage': { title: 'HV 배터리 전압', desc: 'HV 배터리 전압(V)입니다.' },
+  'battery-current': { title: 'HV 배터리 전류', desc: 'HV 배터리 전류(A)입니다.' },
+  'battery-temperature-max': { title: '배터리 최고 온도', desc: '배터리 셀 중 최고 온도입니다.' },
+  'battery-temperature-min': { title: '배터리 최저 온도', desc: '배터리 셀 중 최저 온도입니다.' },
+  'battery-capacity': { title: '배터리 용량', desc: '배터리 용량 정보입니다.' },
+  'dcl': { title: '방전 전류 제한', desc: 'BMS가 계산한 방전 전류 제한값입니다.' },
+  'rpm': { title: '모터 RPM', desc: '모터 회전수입니다.' },
+  'motor-torque': { title: '모터 토크', desc: '모터 토크 피드백 값입니다.' },
+  'motor-temperature': { title: '모터 온도', desc: '모터 온도입니다.' },
+  'motor-coolant': { title: '냉각수 온도', desc: '냉각수 온도입니다.' },
+  'motor-igbt-temperature': { title: 'IGBT 온도', desc: 'IGBT 최고 온도입니다.' },
+  'inverter-temperature': { title: '인버터 온도', desc: '인버터 내부 온도입니다.' },
+  'inverter-status': { title: '인버터 상태', desc: '인버터 동작 상태입니다.' },
+  'precharge': { title: '프리차지', desc: '프리차지 릴레이 상태입니다.' },
+  'air': { title: '메인 컨택터', desc: '메인 릴레이 상태입니다.' },
+  'inv-mode': { title: '인버터 모드', desc: '인버터 제어 모드입니다.' },
+  'voltage-failsafe': { title: '전압 페일세이프', desc: '전압 이상 보호 상태입니다.' },
+  'current-failsafe': { title: '전류 페일세이프', desc: '전류 이상 보호 상태입니다.' },
+  'relay-failsafe': { title: '릴레이 페일세이프', desc: '릴레이 이상 보호 상태입니다.' },
+  'balancing-active': { title: '셀 밸런싱', desc: '셀 밸런싱 동작 상태입니다.' },
+  'interlock-failsafe': { title: '인터락 페일세이프', desc: '인터락 이상 보호 상태입니다.' },
+  'thermistor-invalid': { title: '써미스터 오류', desc: '온도 센서 데이터 오류 상태입니다.' },
+  'input-power-failsafe': { title: '입력 전원 페일세이프', desc: '입력 전원 이상 보호 상태입니다.' },
+  'steering-angle': { title: '스티어링 각도', desc: '스티어링 휠 각도입니다.' },
+  'steering-speed': { title: '스티어링 속도', desc: '스티어링 휠 각속도입니다.' },
+  'linear-position': { title: '리니어 위치', desc: '리니어 센서 위치 값입니다.' }
+};
+        function fault_toHTML(faults) {
+          if(faults.length) {
+            let str = "<ul style='color: red;'>";
+            for(let fault of faults) {
+              str += `<li>${fault}</li>`;
+            }
+            str += "</ul>";
+            return str;
+          }
+          else return "<ul><li>N/A</li></ul>";
+        }
+      </script>
+      <script>
+        $(document).on('change', 'input.tooltips', function () {
+          if ($(this).prop('checked')) {
+            const target = this.id.replace('tooltip-', '');
+            console.log('Tooltip target:', target);
+            const tip = tooltips[target];
+            if (!tip) {
+              console.warn(`No tooltip found for: ${target}`);
+              return;
+            }
+
+            Swal.fire({
+              icon: 'info',
+              title: tip.title,
+              html: tip.desc,
+            });
+          }
+        });
+
+      </script>
+      <script>
+
+        let graphs = {};
+        let graph_data = {};
+        for (const canvas of document.getElementsByTagName('canvas')) graph_data[canvas.id] = [];
+        graph_data["graph-motor-torque-commanded"] = [];
+
+        const graph_config = {
+          'graph-speed': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-accel': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-braking': { delay: 0, grace: 5, color: 'rgb(255, 99, 132)' },
+          'graph-core-temperature': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-battery-percent': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-battery-voltage': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-battery-current': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-battery-temperature-max': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-battery-temperature-min': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-dcl': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-rpm': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-motor-torque': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-motor-temperature': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-motor-coolant': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-motor-igbt-temperature': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-inverter-temperature': { delay: 0, grace: 5, color: 'rgb(54, 162, 235)' },
+          'graph-steering-wheel-angle': { delay: 0, grace: 5, color: 'rgb(75, 192, 192)' }, // 異붽?
+          'graph-steering-wheel-speed': { delay: 0, grace: 5, color: 'rgb(153, 102, 255)' }, // 異붽?
+
+          'graph-linear-front-left': { delay: 0, grace: 5, color: 'rgb(255, 159, 64)' },
+          'graph-linear-front-right': { delay: 0, grace: 5, color: 'rgb(255, 205, 86)' },
+          'graph-linear-rear-left': { delay: 0, grace: 5, color: 'rgb(75, 192, 192)' },
+          'graph-linear-rear-right': { delay: 0, grace: 5, color: 'rgb(153, 102, 255)' },
+
+        };
+
+        function updateBarGraph(canvasId, value) {
+          const ctx = document.getElementById(canvasId).getContext('2d');
+          if (!graphs[canvasId]) {
+            graphs[canvasId] = new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: [''],
+                datasets: [{
+                  label: canvasId,
+                  data: [value],
+                  backgroundColor: graph_config[canvasId].color
+                }]
+              },
+              options: {
+                responsive: true,
+                scales: {
+                  x: { display: false },
+                  y: {
+                    min: 0, max: 1,
+                    ticks: { stepSize: 0.1 }
+                  }
+                }
+              }
+            });
+          } else {
+            graphs[canvasId].data.datasets[0].data[0] = value;
+            graphs[canvasId].update();
+          }
+        }
+
+        function process_data(data) {
+          switch (data.source) {
+            case "CAN": {
+              switch (data.key) {
+                case "CAN_INV_TEMP_1":
+                  graph_data['graph-motor-igbt-temperature'].push({
+                    x: data.datetime,
+                    y: data.parsed.igbt.max.temperature
+                  });
+                  break;
+
+                case "CAN_INV_TEMP_2":
+                  break;
+
+                case "CAN_INV_TEMP_3":
+                  graph_data['graph-motor-temperature'].push({
+                    x: data.datetime,
+                    y: data.parsed.motor
+                  });
+                  break;
+
+                case "CAN_INV_ANALOG_IN":
+                  // graph_data['graph-accel'].push({
+                  //   x: data.datetime,
+                  //   y:data.parsed.AIN1
+                  // });
+                  // graph_data['graph-braking'].push({
+                  //   x: data.datetime,
+                  //   y:data.parsed.AIN3
+                  // });
+                  updateBarGraph('graph-accel', data.parsed.AIN1);
+                  updateBarGraph('graph-braking', data.parsed.AIN3);
+                  break;
+
+
+                case "CAN_INV_MOTOR_POS":
+                  graph_data['graph-rpm'].push({
+                    x: data.datetime,
+                    y: data.parsed.motor_speed
+                  });
+                  graph_data['graph-speed'].push({
+                    x: data.datetime,
+                    y: 2 * Math.PI * 0.24765 * 60 * data.parsed.motor_speed / (1000 * 5.188235)
+                  });
+                  break;
+
+                case "CAN_INV_TORQUE":
+                  graph_data['graph-motor-torque'].push({
+                    x: data.datetime,
+                    y: data.parsed.torque_feedback
+                  });
+                  graph_data["graph-motor-torque-commanded"].push({
+                    x: data.datetime,
+                    y: data.parsed.commanded_torque
+                  });
+                  break;
+
+                case "CAN_BMS_CORE":
+                  graph_data['graph-battery-percent'].push({
+                    x: data.datetime,
+                    y: data.parsed.soc
+                  });
+                  graph_data['graph-battery-voltage'].push({
+                    x: data.datetime,
+                    y: data.parsed.voltage
+                  });
+                  graph_data['graph-battery-current'].push({
+                    x: data.datetime,
+                    y: data.parsed.current
+                  });
+                  break;
+
+                case "CAN_BMS_TEMP":
+                  graph_data['graph-battery-temperature-max'].push({
+                    x: data.datetime,
+                    y: data.parsed.temperature.max.value
+                  });
+                  graph_data['graph-dcl'].push({
+                    x: data.datetime,
+                    y: data.parsed.dcl
+                  });
+                  break;
+
+                case "CAN_STEERING_WHEEL_ANGLE":
+                  graph_data['graph-steering-wheel-angle'].push({
+                    x: data.datetime,
+                    y: data.parsed.angle
+                  });
+                  graph_data['graph-steering-wheel-speed'].push({
+                    x: data.datetime,
+                    y: data.parsed.speed
+                  });
+                  break;
+
+                case "CAN_FRONT_LINER_L":
+                  graph_data['graph-linear-front-left'].push({
+                    x: data.datetime,
+                    y: data.parsed.lengthMM
+                  });
+                  break;
+
+                case "CAN_FRONT_LINER_R":
+                  graph_data['graph-linear-front-right'].push({
+                    x: data.datetime,
+                    y: data.parsed.lengthMM
+                  });
+                  break;
+
+                case "CAN_REAR_LINER_L":
+                  graph_data['graph-linear-rear-left'].push({
+                    x: data.datetime,
+                    y: data.parsed.lengthMM
+                  });
+                  break;
+
+                case "CAN_REAR_LINER_R":
+                  graph_data['graph-linear-rear-right'].push({
+                    x: data.datetime,
+                    y: data.parsed.lengthMM
+                  });
+                  break;
+
+              }
+              break;
+            }
+            case "ADC": {
+              switch (data.key) {
+                case "ADC_CPU": {
+                  graph_data['graph-core-temperature'].push({
+                    x: data.datetime,
+                    y: data.parsed / 10
+                  });
+                  break;
+                }
+
+              }
+              break;
+            }
+            case "GPS": {
+              switch (data.key) {
+                case "GPS_POS": {
+                  let pos = new kakao.maps.LatLng(data.parsed.lat, data.parsed.lon);
+                  if (gps_marker) {
+                    gps_marker.setMap(null);
+                  }
+                  gps_marker = new kakao.maps.Marker({ position: pos });
+                  gps_marker.setMap(map);
+                  gps_path.push(pos);
+                  gps_polyline.setPath(gps_path);
+                  map.panTo(pos);
+                  break;
+                }
+              }
+              break;
+            }
+          }
+        }  </script>
+      <script>
+
+        $(document).on('change', 'input.toggle-graph', e => {
+          const canvas = document.getElementById(e.target.id.replace('toggle-', ''));
+          console.log('toggle changed:', e.target.id, e.target.checked);
+          if (!canvas) {
+            console.error('Canvas not found for ID:', e.target.id);
+            return;
+          }
+          if ($(e.target).prop('checked')) {
+            graphs[canvas.id] = new Chart(canvas, {
+              type: 'line',
+              data: {
+                datasets: [{
+                  data: graph_data[canvas.id],
+                  cubicInterpolationMode: 'monotone',
+                  tension: 0.2,
+                  borderColor: graph_config[canvas.id].color
+                }, ((canvas.id == "graph-motor-torque") ? {
+                  data: graph_data["graph-motor-torque-commanded"],
+                  cubicInterpolationMode: 'monotone',
+                  tension: 0.2,
+                  borderColor: 'rgb(255, 159, 64)'
+                } : {})]
+              },
+              options: {
+                responsive: true,
+                interaction: { intersect: false },
+                scales: {
+                  x: {
+                    type: 'realtime',
+                    realtime: {
+                      duration: 60000,
+                      refresh: 500,
+                      delay: graph_config[canvas.id].delay
+                    }
+                  },
+                  y: { grace: graph_config[canvas.id].grace }
+                },
+                plugins: { legend: { display: false } },
+                elements: {
+                  point: {
+                    borderWidth: 0,
+                    radius: 10,
+                    backgroundColor: 'rgba(0, 0, 0, 0)'
+                  }
+                }
+              }
+            });
+          } else {
+            graphs[canvas.id].destroy();
+            delete graphs[canvas.id];
+          }
+        });
+
+      </script>
+      <script>
+
+        let isLiveCANTrafficOn = false;
+        let liveCANTrafficData = [];
+        $(function () {
+          $(document).on("click", "#livecan", e => {
+            isLiveCANTrafficOn = true;
+            Swal.fire({
+              html: `<table id="can_table" class="compact cell-border stripe"><thead><tr><th>id</th><th>#0</th><th>#1</th><th>#2</th><th>#3</th><th>#4</th><th>#5</th><th>#6</th><th>#7</th><th>cnt</th><th>int</th></thead></table>`,
+              showCloseButton: true,
+              willOpen: dom => {
+                CAN_index = 0;
+                $('#can_table').DataTable({
+                  data: liveCANTrafficData,
+                  paging: false,
+                  columns: [
+                    { data: 'id' },
+                    { data: 'byte0' },
+                    { data: 'byte1' },
+                    { data: 'byte2' },
+                    { data: 'byte3' },
+                    { data: 'byte4' },
+                    { data: 'byte5' },
+                    { data: 'byte6' },
+                    { data: 'byte7' },
+                    { data: 'cnt' },
+                    { data: 'interval' }
+                  ],
+                  columnDefs: [{
+                    targets: "_all",
+                    className: "dt-head-center",
+                    orderable: false,
+                  }],
+                  select: true,
+                  responsive: true
+                });
+              },
+              willClose: dom => {
+                isLiveCANTrafficOn = false;
+                liveCANTrafficData = [];
+                CAN_index = 0;
+                $('#can_table').DataTable().destroy();
+              }
+            });
+          });
+        });
+        document.getElementById('toggle-all-graphs').addEventListener('click', function() {
+          const graphToggles = document.querySelectorAll('.toggle-graph');
+          const shouldEnable = Array.from(graphToggles).some(toggle => !toggle.checked);
+
+          graphToggles.forEach(toggle => {
+            if (toggle.checked !== shouldEnable) {
+              toggle.checked = shouldEnable;
+              toggle.dispatchEvent(new Event('change'));
+            }
+          });
+        });
+
+
+      </script>
+  </body>
+</html>
