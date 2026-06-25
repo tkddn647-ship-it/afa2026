@@ -1,0 +1,12 @@
+../Core/Src/lis3dsh.c:53:13:LIS3DSH_CS_Low	1
+../Core/Src/lis3dsh.c:58:13:LIS3DSH_CS_High	1
+../Core/Src/lis3dsh.c:63:13:LIS3DSH_SPI_Recover	1
+../Core/Src/lis3dsh.c:71:13:LIS3DSH_CS_Init	1
+../Core/Src/lis3dsh.c:85:16:LIS3DSH_SPI_WriteRead	2
+../Core/Src/lis3dsh.c:99:13:LIS3DSH_WriteReg	1
+../Core/Src/lis3dsh.c:107:16:LIS3DSH_ReadReg	1
+../Core/Src/lis3dsh.c:119:16:LIS3DSH_Raw16FromBytes	1
+../Core/Src/lis3dsh.c:124:14:LIS3DSH_Raw16ToG	1
+../Core/Src/lis3dsh.c:130:13:LIS3DSH_Reboot	1
+../Core/Src/lis3dsh.c:139:19:LIS3DSH_Init	4
+../Core/Src/lis3dsh.c:175:19:LIS3DSH_ReadAccel	4

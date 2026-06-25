@@ -7,7 +7,7 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2025 STMicroelectronics.
+  * Copyright (c) 2026 STMicroelectronics.
   * All rights reserved.
   *
   * This software is licensed under terms that can be found in the LICENSE file
@@ -57,9 +57,32 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define Raspberry_pi_5_to_RX_Pin GPIO_PIN_10
+#define Raspberry_pi_5_to_RX_GPIO_Port GPIOC
+#define Raspberry_pi_5_to_TX_Pin GPIO_PIN_11
+#define Raspberry_pi_5_to_TX_GPIO_Port GPIOC
+#define Uno_to_RX_Pin GPIO_PIN_5
+#define Uno_to_RX_GPIO_Port GPIOD
+#define Uno_to_TX_Pin GPIO_PIN_6
+#define Uno_to_TX_GPIO_Port GPIOD
+#define ADXL345_SCL_Pin GPIO_PIN_6
+#define ADXL345_SCL_GPIO_Port GPIOB
+#define ADXL345_SDA_Pin GPIO_PIN_7
+#define ADXL345_SDA_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
+#define LIS3DSH_CS_Pin GPIO_PIN_3
+#define LIS3DSH_CS_GPIO_Port GPIOE
 
+/* Discovery 파란 버튼 B1 = PA0 (CubeMX GPIO_INPUT, 폴링) */
+#define BOARD_STM32F407G_DISCOVERY  1U
+
+#define USER_BTN_Pin GPIO_PIN_0
+#define USER_BTN_GPIO_Port GPIOA
+#define USER_BTN_GPIO_CLK_ENABLE() __HAL_RCC_GPIOA_CLK_ENABLE()
+
+#define USER_BUTTON_ENABLE 1U
+#define USER_BUTTON_BOOT_GUARD_MS 2000U
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -1,0 +1,16 @@
+../Core/Src/adc.c:49:13:ADC_EnsureAnalogPins	1
+../Core/Src/adc.c:60:17:ADC_ReadHalChannel	5
+../Core/Src/adc.c:101:17:ADC_ReadChannelOnce	2
+../Core/Src/adc.c:111:17:ADC_ReadInternalRawAvg	3
+../Core/Src/adc.c:128:17:ADC_ReadVddaMv	5
+../Core/Src/adc.c:157:6:MX_ADC1_Init	3
+../Core/Src/adc.c:204:6:HAL_ADC_MspInit	2
+../Core/Src/adc.c:234:6:HAL_ADC_MspDeInit	2
+../Core/Src/adc.c:261:6:ADC_LinearSensor_Init	2
+../Core/Src/adc.c:275:10:ADC_ReadRaw	3
+../Core/Src/adc.c:292:10:ADC_RawToVoltageMv	1
+../Core/Src/adc.c:297:7:ADC_RawToPositionMm	1
+../Core/Src/adc.c:302:6:ADC_ReadLinearSensor	3
+../Core/Src/adc.c:314:6:ADC_ReadAllLinearSensors	2
+../Core/Src/adc.c:328:16:ADC_RawToMcuTempC	3
+../Core/Src/adc.c:348:7:ADC_ReadMcuTempC	1

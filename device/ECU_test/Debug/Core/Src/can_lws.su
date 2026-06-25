@@ -1,0 +1,6 @@
+../Core/Src/can_lws.c:27:13:CAN_LWS_SyncDebugState	12	static
+../Core/Src/can_lws.c:32:13:CAN_LWS_ParsePayload	32	static
+../Core/Src/can_lws.c:79:6:CAN_LWS_Init	48	static
+../Core/Src/can_lws.c:113:6:CAN_LWS_Process	48	static
+../Core/Src/can_lws.c:132:6:CAN_LWS_GetState	24	static
+../Core/Src/can_lws.c:142:19:CAN_LWS_SendConfigCcw	56	static

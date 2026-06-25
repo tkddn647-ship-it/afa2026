@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sensor Logger</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b12;
+      --panel: #101827;
+      --panel-2: #0b111c;
+      --line: #22324a;
+      --text: #f6f8fc;
+      --muted: #8fb2df;
+      --accent: #5cc8ff;
+      --good: #39d98a;
+      --warn: #ffcb45;
+      --danger: #ff6b7d;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top left, #10213a 0, var(--bg) 42%);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+    }
+
+    .page {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      padding: 28px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 40px;
+      line-height: 1;
+    }
+
+    .subtitle {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .value {
+      font-size: 28px;
+      font-weight: 800;
+      line-height: 1.1;
+      overflow-wrap: anywhere;
+    }
+
+    .unit {
+      color: var(--muted);
+      font-size: 14px;
+      margin-left: 4px;
+      font-weight: 600;
+    }
+
+    .bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    button, a.btnlink {
+      min-height: 40px;
+      padding: 0 16px;
+      border: 1px solid #2f6c9b;
+      border-radius: 6px;
+      background: #0e2b46;
+      color: #e7f7ff;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    button:disabled, a.btnlink.disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    button.stop, a.btnlink.stop {
+      border-color: #8c2638;
+      background: #3a101a;
+      color: #ffd8df;
+    }
+
+    .session-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .session-head h2 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .session-head p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.idle { background: #1a2434; color: #9bb7d9; border: 1px solid #2a3d57; }
+    .badge.active { background: #12351f; color: #8ef0b2; border: 1px solid #2f7a49; }
+    .badge.warn { background: #3a2a10; color: #ffd98d; border: 1px solid #7a5a1f; }
+
+    .active-panel {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .metric {
+      padding: 14px;
+      border-radius: 8px;
+      background: #090f18;
+      border: 1px solid #1a2638;
+    }
+
+    .metric .label { margin-bottom: 8px; }
+    .metric .value { font-size: 24px; }
+
+    .file-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      padding: 12px;
+      border: 1px solid #24344c;
+      border-radius: 8px;
+      background: #090f18;
+    }
+
+    .file-row + .file-row { margin-top: 10px; }
+
+    .file-name {
+      color: #eaf4ff;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .file-meta {
+      color: #9bb7d9;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #statusLine {
+      color: #c9ced6;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+      padding: 8px 2px;
+    }
+
+    @media (max-width: 900px) {
+      .grid, .active-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      h1 { font-size: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div>
+        <h1>Sensor Logger</h1>
+        <div class="subtitle">센서 데이터 수신 및 CSV 로깅 서버</div>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="card"><div class="label">1초 수신량</div><div class="value"><span id="hz1">0</span><span class="unit">Hz</span></div></div>
+      <div class="card"><div class="label">5초 평균</div><div class="value"><span id="hz5">0.0</span><span class="unit">Hz</span></div></div>
+      <div class="card"><div class="label">총 샘플</div><div class="value" id="totalSamples">0</div></div>
+      <div class="card"><div class="label">연결 장비</div><div class="value" id="connectedDevices">0</div></div>
+    </section>
+
+    <div class="bar">
+      <button id="startButton" type="button">로깅 시작</button>
+      <button id="stopButton" class="stop" type="button" disabled>로깅 중지</button>
+      <span id="statusLine">상태 확인 중...</span>
+    </div>
+
+    <section class="card" id="sessionCard">
+      <div class="session-head">
+        <div>
+          <h2>로깅 세션</h2>
+          <p>진행 중 용량을 표시하고, 종료 후 파일을 남겨 Download / Delete 할 수 있습니다.</p>
+        </div>
+        <span class="badge idle" id="sessionBadge">대기 중</span>
+      </div>
+
+      <div id="activePanel" class="active-panel" hidden>
+        <div class="metric">
+          <div class="label">저장 용량</div>
+          <div class="value" id="activeBytes">0 MB</div>
+        </div>
+        <div class="metric">
+          <div class="label">기록 행 수</div>
+          <div class="value" id="activeRows">0</div>
+        </div>
+        <div class="metric">
+          <div class="label">파일명</div>
+          <div class="value" id="activeFile" style="font-size:16px;">-</div>
+        </div>
+      </div>
+
+      <div id="completedList" class="empty">완료된 로깅 파일이 없습니다.</div>
+    </section>
+  </div>
+
+  <script>
+    function formatBytes(bytes) {
+      const size = Number(bytes || 0);
+      if (size < 1024) return size + ' B';
+      if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB';
+      return (size / 1024 / 1024).toFixed(2) + ' MB';
+    }
+
+    function formatTime(iso) {
+      if (!iso) return '-';
+      try {
+        return new Date(iso).toLocaleString();
+      } catch (e) {
+        return iso;
+      }
+    }
+
+    async function postJson(url) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      return { ok: res.ok, status: res.status, data };
+    }
+
+    function setBadge(mode, text) {
+      const badge = document.getElementById('sessionBadge');
+      badge.className = 'badge ' + mode;
+      badge.textContent = text;
+    }
+
+    function renderCompleted(sessions) {
+      const box = document.getElementById('completedList');
+      if (!sessions || !sessions.length) {
+        box.className = 'empty';
+        box.textContent = '완료된 로깅 파일이 없습니다.';
+        return;
+      }
+      box.className = '';
+      box.innerHTML = sessions.map((session) => (
+        '<div class="file-row">' +
+          '<div>' +
+            '<div class="file-name">' + (session.filename || 'sensor_log.csv') + '</div>' +
+            '<div class="file-meta">' + formatBytes(session.download_bytes) +
+              ' · ' + formatTime(session.stopped_at) +
+              (session.compressed ? ' · gzip' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="file-actions">' +
+            '<a class="btnlink" href="' + session.download_url + '">Download</a>' +
+            '<button type="button" class="stop" data-delete-token="' + session.token + '">Delete</button>' +
+          '</div>' +
+        '</div>'
+      )).join('');
+
+      box.querySelectorAll('[data-delete-token]').forEach((button) => {
+        button.addEventListener('click', () => deleteSession(button.dataset.deleteToken));
+      });
+    }
+
+    async function deleteSession(token) {
+      if (!token) return;
+      if (!confirm('이 로깅 파일을 서버에서 삭제할까요?')) return;
+      try {
+        const res = await fetch('/api/logging/session/' + encodeURIComponent(token), { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '삭제 실패');
+        document.getElementById('statusLine').textContent = '삭제 완료';
+        renderCompleted(data.completed_sessions || []);
+      } catch (err) {
+        document.getElementById('statusLine').textContent = '삭제 실패: ' + (err.message || err);
+      }
+    }
+
+    async function refreshAll() {
+      try {
+        const [statsRes, logRes] = await Promise.all([
+          fetch('/api/stats', { cache: 'no-store' }),
+          fetch('/api/logging/status', { cache: 'no-store' }),
+        ]);
+        const stats = await statsRes.json();
+        const logging = await logRes.json();
+
+        document.getElementById('hz1').textContent = String(stats.hz_1s ?? 0);
+        document.getElementById('hz5').textContent = String(stats.hz_5s_avg ?? 0);
+        document.getElementById('totalSamples').textContent = String(stats.total_samples ?? 0);
+        document.getElementById('connectedDevices').textContent = String(logging.connected_devices ?? 0);
+
+        const active = Boolean(logging.enabled);
+        document.getElementById('startButton').disabled = active || !logging.can_start;
+        document.getElementById('stopButton').disabled = !active;
+
+        const activePanel = document.getElementById('activePanel');
+        if (active) {
+          setBadge('active', '로깅 중');
+          activePanel.hidden = false;
+          document.getElementById('activeBytes').textContent = formatBytes(logging.file_bytes);
+          document.getElementById('activeRows').textContent = String(logging.rows_written ?? 0);
+          document.getElementById('activeFile').textContent = logging.active_file || logging.session_id || '-';
+          document.getElementById('statusLine').textContent =
+            '저장 중... ' + formatBytes(logging.file_bytes) +
+            ' / ' + (logging.rows_written ?? 0) + ' rows' +
+            (logging.dropped_rows ? ' / dropped ' + logging.dropped_rows : '');
+        } else {
+          activePanel.hidden = true;
+          setBadge(logging.can_start ? 'idle' : 'warn', logging.can_start ? '대기 중' : '장비 없음');
+          document.getElementById('statusLine').textContent = logging.can_start
+            ? '로깅 시작을 누르세요.'
+            : '연결된 장비가 없습니다.';
+        }
+
+        renderCompleted(logging.completed_sessions || []);
+      } catch (err) {
+        document.getElementById('statusLine').textContent = '상태 조회 실패: ' + (err.message || err);
+      }
+    }
+
+    document.getElementById('startButton').addEventListener('click', async () => {
+      const result = await postJson('/api/logging/start');
+      if (!result.ok) {
+        document.getElementById('statusLine').textContent = result.data.message || '로깅 시작 실패';
+        return;
+      }
+      document.getElementById('statusLine').textContent = '로깅 시작됨';
+      refreshAll();
+    });
+
+    document.getElementById('stopButton').addEventListener('click', async () => {
+      const result = await postJson('/api/logging/stop');
+      if (!result.ok || !result.data.ok) {
+        document.getElementById('statusLine').textContent = result.data.message || '로깅 중지 실패';
+        return;
+      }
+      document.getElementById('statusLine').textContent =
+        '로깅 완료: ' + (result.data.filename || '') + ' (' + formatBytes(result.data.download_bytes) + ')';
+      renderCompleted(result.data.completed_sessions || []);
+      refreshAll();
+    });
+
+    refreshAll();
+    setInterval(refreshAll, 1000);
+  </script>
+</body>
+</html>
