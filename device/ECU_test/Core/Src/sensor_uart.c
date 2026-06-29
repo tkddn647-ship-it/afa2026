@@ -10,7 +10,7 @@
   *
  * UART4 보드레이트: 460800 (Pi 와 동일)
  * UART 한 줄 (Pi Uart_stm.py 호환):
- *   timestamp_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed
+ *   timestamp_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed,wheel_rpm_right,wheel_rpm_left
  *   ecu_temp = STM32 칩 내부(다이) 온도(°C). steering_* = Bosch LWS (CAN2).
   ******************************************************************************
   */
@@ -21,6 +21,7 @@
 #include "can_lws.h"
 #include "lis3dsh.h"
 #include "usart.h"
+#include "wheel_speed_uart.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -182,6 +183,16 @@ static int SensorUart_FormatSample(const SensorSample_t *sample, char *buf, int 
     buf[pos++] = ',';
   }
   pos += snprintf(&buf[pos], (size_t)(cap - pos), "%ld", (long)float_to_fixed(sample->steering_speed_dps, 1));
+  if (pos < cap)
+  {
+    buf[pos++] = ',';
+  }
+  pos += snprintf(&buf[pos], (size_t)(cap - pos), "%ld", (long)float_to_fixed(sample->wheel_rpm_right, 10));
+  if (pos < cap)
+  {
+    buf[pos++] = ',';
+  }
+  pos += snprintf(&buf[pos], (size_t)(cap - pos), "%ld", (long)float_to_fixed(sample->wheel_rpm_left, 10));
   if ((pos < cap) && (pos > 0))
   {
     buf[pos++] = '\n';
@@ -223,6 +234,8 @@ static void SensorUart_CaptureSample(void)
     sample->steering_angle_deg = lws.angle_deg;
     sample->steering_speed_dps = lws.speed_dps;
   }
+  sample->wheel_rpm_right = WheelSpeedUart_GetWheelRpmRight();
+  sample->wheel_rpm_left = WheelSpeedUart_GetWheelRpmLeft();
   data_count++;
 }
 

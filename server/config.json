@@ -1,6 +1,0 @@
-{
-  "port": 7777,
-  "channels": [
-    { "name": "afa", "key": "1234" }
-  ]
-}

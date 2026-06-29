@@ -335,7 +335,7 @@ uint32_t HAL_GetTickPrio(void)
 }
 
 /**
-  * @brief Set new tick Freq.s
+  * @brief Set new tick Freq.
   * @retval Status
   */
 HAL_StatusTypeDef HAL_SetTickFreq(HAL_TickFreqTypeDef Freq)

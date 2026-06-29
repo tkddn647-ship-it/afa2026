@@ -65,10 +65,6 @@ void Error_Handler(void);
 #define Uno_to_RX_GPIO_Port GPIOD
 #define Uno_to_TX_Pin GPIO_PIN_6
 #define Uno_to_TX_GPIO_Port GPIOD
-#define ADXL345_SCL_Pin GPIO_PIN_6
-#define ADXL345_SCL_GPIO_Port GPIOB
-#define ADXL345_SDA_Pin GPIO_PIN_7
-#define ADXL345_SDA_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 #define LIS3DSH_CS_Pin GPIO_PIN_3

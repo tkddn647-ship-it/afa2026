@@ -15,10 +15,11 @@ STM32(UART4, 460800) -> Raspberry Pi 5 GPIO UART 수신
 
 STM32 한 줄 형식 (CSV, \\n 종료):
   FR,FL,RR,RL,x_g,y_g,z_g
-또는 STM32 타임스탬프(ms) + MCU 칩 내부 온도 + LWS 조향 포함:
-  stm_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed
+또는 STM32 타임스탬프(ms) + MCU 칩 내부 온도 + LWS 조향 + 휠스피드 포함:
+  stm_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed,wheel_rpm_right,wheel_rpm_left
   ecu_temp = STM32 MCU 칩 내부(다이) 온도(°C)
   steering_angle = Bosch LWS 조향각(°), steering_speed = 조향 속도(°/s)
+  wheel_rpm_right / wheel_rpm_left = STM32 계산 좌·우 바퀴 RPM
 """
 
 from __future__ import annotations
@@ -67,9 +68,11 @@ LINEAR_KEYS = ("FR", "FL", "RR", "RL")
 ACCEL_KEYS = ("x_g", "y_g", "z_g")
 ECU_TEMP_KEY = "ecu_temp"
 STEERING_KEYS = ("steering_angle", "steering_speed")
-SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS
+WHEEL_KEYS = ("wheel_rpm_right", "wheel_rpm_left")
+SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS + WHEEL_KEYS
 LEGACY_SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS
 SENSOR_KEYS_WITH_TEMP = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,)
+SENSOR_KEYS_WITH_STEERING = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS
 BOOT_LINE_PREFIXES = ("STM_", "HB,", "LWS_CAL")
 
 # 수신 버퍼 (20 Hz 마다 초기화)
@@ -345,8 +348,10 @@ def parse_line(line: str) -> dict[str, Any] | None:
         values = parts
 
     if len(values) == len(LEGACY_SENSOR_KEYS):
-        values = [*values, "0", "0", "0"]
+        values = [*values, "0", "0", "0", "0", "0"]
     elif len(values) == len(SENSOR_KEYS_WITH_TEMP):
+        values = [*values, "0", "0", "0", "0"]
+    elif len(values) == len(SENSOR_KEYS_WITH_STEERING):
         values = [*values, "0", "0"]
     elif len(values) != len(SENSOR_KEYS):
         return None

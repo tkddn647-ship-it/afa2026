@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera HUD</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05091f;
+      --panel: rgba(10, 14, 35, 0.82);
+      --line: rgba(255, 255, 255, 0.18);
+      --text: #f4f7ff;
+      --muted: #9bb7d9;
+      --ok: #39d98a;
+      --bad: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: Arial, sans-serif; }
+    .stage {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+    }
+    .stream-host {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    #streamImage {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+      pointer-events: none;
+      -webkit-user-drag: none;
+      user-select: none;
+    }
+    #streamOverlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #d7deea;
+      font-size: clamp(28px, 4vw, 52px);
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      background: rgba(0, 0, 0, 0.55);
+      pointer-events: none;
+    }
+    .hud-rail {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      bottom: 12px;
+      width: min(190px, 24vw);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 4;
+      overflow: hidden;
+      scrollbar-width: none;
+    }
+    .hud-rail::-webkit-scrollbar { display: none; }
+    .pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      font-size: 13px;
+    }
+    .pill .dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      background: var(--bad);
+      flex: 0 0 14px;
+    }
+    .pill.ok .dot { background: var(--ok); }
+    .hud-bottom {
+      position: absolute;
+      left: 0;
+      right: min(210px, 26vw);
+      bottom: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px 14px;
+      pointer-events: none;
+      z-index: 4;
+    }
+    .hud-accel { min-width: 250px; }
+    #accelCanvas {
+      display: block;
+      width: 250px;
+      height: 250px;
+      background: transparent;
+    }
+    .hud-accel-text {
+      margin-top: 4px;
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1.35;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+    .hud-speed { flex: 1; display: flex; justify-content: center; min-width: 280px; }
+    #speedometer { display: block; width: min(360px, 42vw); height: auto; background: transparent; }
+    .controls {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      max-width: calc(100% - 220px);
+    }
+    .controls button, .controls a {
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid #2f6c9b;
+      border-radius: 6px;
+      background: rgba(14, 43, 70, 0.92);
+      color: #e7f7ff;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 13px;
+    }
+    .controls button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .controls button.stop, .controls a.stop { border-color: #8c2638; background: rgba(58, 16, 26, 0.92); color: #ffd8df; }
+    #status {
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(0,0,0,0.45);
+      padding: 6px 10px;
+      border-radius: 6px;
+      max-width: 100%;
+    }
+    .controls button.active {
+      border-color: #5cc8ff;
+      background: rgba(18, 58, 92, 0.95);
+    }
+    #toggleFiles { position: relative; }
+    #recordingsBadge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 18px;
+      text-align: center;
+      display: none;
+    }
+    #recordingsBadge.show { display: inline-block; }
+    .recordings-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.62);
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .recordings-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .recordings-panel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: min(460px, 94vw);
+      z-index: 31;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, #0d1528 0%, #070b14 100%);
+      border-right: 1px solid #2a3f5c;
+      box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+      transform: translateX(-105%);
+      transition: transform 0.24s ease;
+    }
+    .recordings-panel.open { transform: translateX(0); }
+    .recordings-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #24344c;
+      flex-shrink: 0;
+    }
+    .recordings-header h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 800;
+      flex: 1;
+    }
+    .recordings-count {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .recordings-close {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid #3d5575;
+      border-radius: 6px;
+      background: #122033;
+      color: #e7f0ff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .recordings-body {
+      flex: 1;
+      overflow: auto;
+      padding: 14px 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .recordings-empty {
+      margin: 24px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .file-card {
+      border: 1px solid #2b3f5a;
+      border-radius: 10px;
+      background: rgba(8, 14, 26, 0.96);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .file-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: #eef4ff;
+      word-break: break-all;
+      line-height: 1.35;
+    }
+    .file-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .file-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #1a2d46;
+      border: 1px solid #35567a;
+      color: #b8d7ff;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 11px;
+    }
+    .file-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .file-actions a,
+    .file-actions button {
+      min-height: 34px;
+      padding: 0 14px;
+      border: 1px solid #2f6c9b;
+      border-radius: 6px;
+      background: #0e2b46;
+      color: #e7f7ff;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+    .file-actions button.stop {
+      border-color: #8c2638;
+      background: #3a101a;
+      color: #ffd8df;
+    }
+    @media (max-width: 900px) {
+      .hud-bottom { flex-direction: column; align-items: flex-start; padding-bottom: 220px; }
+      .hud-rail { width: 150px; }
+      .hud-accel-text { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div class="stream-host">
+      <img id="streamImage" src="/api/camera/stream.mjpg" alt="" draggable="false" decoding="async">
+    </div>
+    <div id="streamOverlay">STREAM WAITING</div>
+
+    <div class="controls">
+      <button id="startButton" type="button">녹화 시작</button>
+      <button id="stopButton" class="stop" type="button" disabled>녹화 중지</button>
+      <button id="toggleFiles" type="button">녹화 목록<span id="recordingsBadge"></span></button>
+      <span id="status">로딩 중</span>
+    </div>
+
+    <aside class="hud-rail" aria-label="vehicle status">
+      <div class="pill" id="pill-lv"><span class="dot"></span><span>LV</span></div>
+      <div class="pill" id="pill-hv"><span class="dot"></span><span>HV</span></div>
+      <div class="pill" id="pill-rtd"><span class="dot"></span><span>RTD</span></div>
+      <div class="pill" id="pill-err"><span class="dot"></span><span>ERR</span></div>
+      <div class="pill" id="pill-sd"><span class="dot"></span><span>SD</span></div>
+      <div class="pill" id="pill-telemetry"><span class="dot"></span><span>TELEMETRY</span></div>
+      <div class="pill" id="pill-can"><span class="dot"></span><span>CAN</span></div>
+      <div class="pill" id="pill-imd"><span class="dot"></span><span>IMD</span></div>
+      <div class="pill" id="pill-bms"><span class="dot"></span><span>BMS</span></div>
+      <div class="pill" id="pill-bspd"><span class="dot"></span><span>BSPD</span></div>
+    </aside>
+
+    <div class="hud-bottom">
+      <div class="hud-accel">
+        <canvas id="accelCanvas" width="250" height="250"></canvas>
+        <div class="hud-accel-text">
+          <div>x <span id="accelX">0.0</span> g</div>
+          <div>y <span id="accelY">0.0</span> g</div>
+          <div>ECU temp: <span id="coreTemp">0.0</span> C</div>
+        </div>
+      </div>
+      <div class="hud-speed">
+        <canvas id="speedometer" width="360" height="180"></canvas>
+      </div>
+    </div>
+
+    <div class="recordings-backdrop" id="recordingsBackdrop"></div>
+    <aside class="recordings-panel" id="recordingsPanel" aria-hidden="true">
+      <div class="recordings-header">
+        <h2>녹화 목록</h2>
+        <span class="recordings-count" id="recordingsCount">0개</span>
+        <button type="button" class="recordings-close" id="closeRecordings">닫기</button>
+      </div>
+      <div class="recordings-body" id="recordings">
+        <div class="recordings-empty">저장된 녹화본이 없습니다.</div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const TELEMETRY_POLL_MS = {{ telemetry_poll_ms }};
+    let polling = false;
+    let displayedSpeed = 0;
+    let targetSpeed = 0;
+    let lastStreamAt = 0;
+    let accelX = 0;
+    let accelY = 0;
+
+    function setStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function setPill(id, ok) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('ok', Boolean(ok));
+    }
+
+    function formatMb(size) {
+      return (Number(size || 0) / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    async function postJson(url) {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!data.message && !res.ok) data.message = 'HTTP ' + res.status;
+      return { ok: res.ok, data };
+    }
+
+    let recordingsOpen = false;
+    let latestFiles = [];
+
+    function formatDate(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+        ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+
+    function setRecordingsOpen(open) {
+      recordingsOpen = open;
+      document.getElementById('recordingsBackdrop').classList.toggle('open', open);
+      document.getElementById('recordingsPanel').classList.toggle('open', open);
+      document.getElementById('recordingsPanel').setAttribute('aria-hidden', open ? 'false' : 'true');
+      document.getElementById('toggleFiles').classList.toggle('active', open);
+    }
+
+    function updateRecordingsBadge(files) {
+      const badge = document.getElementById('recordingsBadge');
+      const count = (files || []).length;
+      document.getElementById('recordingsCount').textContent = count + '개';
+      if (count > 0) {
+        badge.textContent = String(count);
+        badge.classList.add('show');
+      } else {
+        badge.textContent = '';
+        badge.classList.remove('show');
+      }
+    }
+
+    function renderRecordings(files) {
+      latestFiles = files || [];
+      updateRecordingsBadge(latestFiles);
+      const box = document.getElementById('recordings');
+      if (!latestFiles.length) {
+        box.innerHTML = '<div class="recordings-empty">저장된 녹화본이 없습니다.<br>녹화 중지 후 여기에 표시됩니다.</div>';
+        return;
+      }
+      box.innerHTML = latestFiles.map((f) => {
+        const ext = (f.format || (f.name || '').split('.').pop() || 'file').toUpperCase();
+        return (
+          '<article class="file-card">' +
+            '<div class="file-name" title="' + f.name + '">' + f.name + '</div>' +
+            '<div class="file-meta">' +
+              '<span class="file-badge">' + ext + '</span>' +
+              '<span>' + formatMb(f.size) + '</span>' +
+              '<span>' + formatDate(f.updated_at) + '</span>' +
+            '</div>' +
+            '<div class="file-actions">' +
+              (f.playable ? '<a href="' + f.play_url + '" target="_blank" rel="noreferrer">재생</a>' : '') +
+              '<a href="' + f.download_url + '" target="_blank" rel="noreferrer">다운로드</a>' +
+              '<button type="button" class="stop" data-delete-name="' + f.name + '">삭제</button>' +
+            '</div>' +
+          '</article>'
+        );
+      }).join('');
+      box.querySelectorAll('[data-delete-name]').forEach((button) => {
+        button.onclick = () => deleteRecording(button.dataset.deleteName);
+      });
+    }
+
+    async function deleteRecording(name) {
+      try {
+        const res = await fetch('/api/recordings/' + encodeURIComponent(name), { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '삭제 실패');
+        setStatus(name + ' 삭제됨');
+        renderRecordings(data.recent_files || []);
+      } catch (err) {
+        setStatus('삭제 실패: ' + (err.message || err));
+      }
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch('/api/recording/status', { cache: 'no-store' });
+        const data = await res.json();
+        const active = Boolean(data.active);
+        document.getElementById('startButton').disabled = active;
+        document.getElementById('stopButton').disabled = !active;
+        if (active) {
+          setStatus('녹화 중 ' + (data.filename || '') + ' / ' + formatMb(data.bytes_written));
+        } else if (!data.ffmpeg_available && data.record_format === 'mp4') {
+          setStatus('MP4 준비 안 됨 — install_ffmpeg.sh 실행 필요');
+          document.getElementById('startButton').disabled = true;
+        } else if (!polling) {
+          setStatus('대기 중 · ' + (data.record_format || 'mp4').toUpperCase());
+        }
+        renderRecordings(data.recent_files || []);
+      } catch (err) {
+        setStatus('상태 조회 실패: ' + (err.message || err));
+      }
+    }
+
+    document.getElementById('startButton').onclick = async () => {
+      setStatus('녹화 시작 요청 중...');
+      document.getElementById('startButton').disabled = true;
+      const { ok, data } = await postJson('/api/recording/start');
+      if (!ok || !data.ok) {
+        document.getElementById('startButton').disabled = false;
+        setStatus('녹화 시작 실패: ' + (data.message || '알 수 없는 오류'));
+        return;
+      }
+      setStatus('녹화 시작: ' + (data.filename || ''));
+      await refreshStatus();
+    };
+
+    document.getElementById('stopButton').onclick = async () => {
+      setStatus('녹화 중지 요청 중...');
+      document.getElementById('stopButton').disabled = true;
+      const { ok, data } = await postJson('/api/recording/stop');
+      if (!ok || !data.ok) {
+        setStatus('녹화 중지 실패: ' + (data.message || '진행 중인 녹화 없음'));
+      } else {
+        const rec = data.recording || {};
+        setStatus('녹화 완료 ' + (rec.filename || '') + ' / ' + (rec.frames_written || 0) + ' frames');
+        setRecordingsOpen(true);
+      }
+      await refreshStatus();
+    };
+
+    document.getElementById('toggleFiles').onclick = () => {
+      setRecordingsOpen(!recordingsOpen);
+    };
+    document.getElementById('closeRecordings').onclick = () => setRecordingsOpen(false);
+    document.getElementById('recordingsBackdrop').onclick = () => setRecordingsOpen(false);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && recordingsOpen) setRecordingsOpen(false);
+    });
+
+    function drawSpeedometer(speed) {
+      const canvas = document.getElementById('speedometer');
+      const ctx = canvas.getContext('2d');
+      const centerX = canvas.width / 2;
+      const radius = canvas.width / 2 - 10;
+      const centerY = canvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, Math.PI, 2 * Math.PI);
+      ctx.lineWidth = 20;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.stroke();
+
+      ctx.font = '14px Arial';
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i <= 120; i += 10) {
+        const angle = (i / 120) * Math.PI + Math.PI;
+        const x1 = centerX + (radius - 10) * Math.cos(angle);
+        const y1 = centerY + (radius - 10) * Math.sin(angle);
+        const x2 = centerX + radius * Math.cos(angle);
+        const y2 = centerY + radius * Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'white';
+        ctx.stroke();
+        const textX = centerX + (radius - 30) * Math.cos(angle);
+        const textY = centerY + (radius - 30) * Math.sin(angle);
+        ctx.fillText(String(i), textX, textY);
+      }
+
+      const clamped = Math.min(Math.max(speed, 0), 120);
+      const speedAngle = (clamped / 120) * Math.PI + Math.PI;
+      const pinX = centerX + (radius - 40) * Math.cos(speedAngle);
+      const pinY = centerY + (radius - 40) * Math.sin(speedAngle);
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(pinX, pinY);
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#ff0000';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, Math.PI, speedAngle, false);
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = 'rgba(169, 223, 216, 0.4)';
+      ctx.stroke();
+      ctx.font = 'bold 48px Arial';
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(Math.round(clamped)), centerX, centerY - 20);
+      ctx.font = '20px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText('km/h', centerX + 30, centerY - 20);
+    }
+
+    function drawAccel() {
+      const canvas = document.getElementById('accelCanvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const maxG = 2.5;
+      const scaleX = (width / 2) / maxG;
+      const scaleY = (height / 2) / maxG;
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 0.5;
+      for (let i = -maxG; i <= maxG; i++) {
+        const x = width / 2 + i * scaleX;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+        const y = height / 2 - i * scaleY;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'gray';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, height / 2);
+      ctx.lineTo(width, height / 2);
+      ctx.moveTo(width / 2, 0);
+      ctx.lineTo(width / 2, height);
+      ctx.stroke();
+      const dotX = width / 2 + accelX * scaleX;
+      const dotY = height / 2 - accelY * scaleY;
+      ctx.fillStyle = 'red';
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function animateSpeed() {
+      const diff = targetSpeed - displayedSpeed;
+      if (Math.abs(diff) > 0.1) {
+        displayedSpeed += diff * 0.15;
+      } else {
+        displayedSpeed = targetSpeed;
+      }
+      drawSpeedometer(displayedSpeed);
+      requestAnimationFrame(animateSpeed);
+    }
+
+    function applyTelemetry(snapshot) {
+      const fresh = Boolean(snapshot && snapshot.ok !== false && snapshot.updated_at);
+      let ageMs = 999999;
+      if (fresh) {
+        const t = Date.parse(snapshot.updated_at);
+        if (!Number.isNaN(t)) ageMs = Date.now() - t;
+      }
+      const live = ageMs < 3000;
+
+      const flags = snapshot.system || {};
+      setPill('pill-lv', flags.lv ?? live);
+      setPill('pill-hv', flags.hv ?? live);
+      setPill('pill-rtd', flags.rtd ?? live);
+      setPill('pill-err', flags.err === undefined ? !live : !flags.err);
+      setPill('pill-sd', flags.sd ?? live);
+      setPill('pill-telemetry', flags.telemetry ?? live);
+      setPill('pill-can', flags.can ?? live);
+      setPill('pill-imd', flags.imd ?? live);
+      setPill('pill-bms', flags.bms ?? live);
+      setPill('pill-bspd', flags.bspd ?? live);
+
+      targetSpeed = Number(snapshot.speed || 0);
+      accelX = Number(snapshot.accel_x || 0);
+      accelY = Number(snapshot.accel_y || 0);
+      document.getElementById('accelX').textContent = accelX.toFixed(1);
+      document.getElementById('accelY').textContent = accelY.toFixed(1);
+      document.getElementById('coreTemp').textContent = Number(snapshot.core_temp || 0).toFixed(1);
+      drawAccel();
+    }
+
+    async function pollTelemetry() {
+      try {
+        const snapshot = await fetch('/api/telemetry/snapshot', { cache: 'no-store' }).then((r) => r.json());
+        applyTelemetry(snapshot);
+      } catch (err) {
+        applyTelemetry({ ok: false });
+      }
+    }
+
+    async function pollCamera() {
+      try {
+        const data = await fetch('/api/camera/latest', { cache: 'no-store' }).then((r) => r.json());
+        if (data.seq > 0 && data.updated_at) {
+          lastStreamAt = Date.now();
+          document.getElementById('streamOverlay').style.display = 'none';
+        }
+      } catch (err) {}
+      if (!lastStreamAt || Date.now() - lastStreamAt > 3000) {
+        document.getElementById('streamOverlay').style.display = 'flex';
+      }
+    }
+
+    const streamImage = document.getElementById('streamImage');
+    streamImage.addEventListener('load', () => {
+      lastStreamAt = Date.now();
+      document.getElementById('streamOverlay').style.display = 'none';
+    });
+
+    drawAccel();
+    animateSpeed();
+    refreshStatus();
+    pollTelemetry();
+    pollCamera();
+    setInterval(() => { polling = true; refreshStatus(); }, 2000);
+    setInterval(pollTelemetry, TELEMETRY_POLL_MS);
+    setInterval(pollCamera, 500);
+  </script>
+</body>
+</html>

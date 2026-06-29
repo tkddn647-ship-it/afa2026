@@ -1,0 +1,9 @@
+../Core/Src/wheel_speed_uart.c:43:14:wheel_speed_pulses_to_rpm	16	static
+../Core/Src/wheel_speed_uart.c:65:13:wheel_speed_restart_rx	8	static
+../Core/Src/wheel_speed_uart.c:75:13:wheel_speed_parse_line	16	static
+../Core/Src/wheel_speed_uart.c:137:13:wheel_speed_rx_byte	24	static
+../Core/Src/wheel_speed_uart.c:187:6:WheelSpeedUart_Init	8	static
+../Core/Src/wheel_speed_uart.c:213:7:WheelSpeedUart_GetWheelRpmRight	4	static
+../Core/Src/wheel_speed_uart.c:223:7:WheelSpeedUart_GetWheelRpmLeft	4	static
+../Core/Src/wheel_speed_uart.c:233:10:WheelSpeedUart_GetRxLineCount	4	static
+../Core/Src/wheel_speed_uart.c:243:6:HAL_UART_RxCpltCallback	16	static

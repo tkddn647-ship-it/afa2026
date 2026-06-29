@@ -27,13 +27,12 @@ Core/Src/sensor_uart.o: ../Core/Src/sensor_uart.c \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ramfunc.h \
- ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c.h \
- ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
- ../Core/Inc/can_lws.h ../Core/Inc/lis3dsh.h ../Core/Inc/usart.h
+ ../Core/Inc/can_lws.h ../Core/Inc/lis3dsh.h ../Core/Inc/usart.h \
+ ../Core/Inc/wheel_speed_uart.h
 ../Core/Inc/sensor_uart.h:
 ../Core/Inc/adc.h:
 ../Core/Inc/main.h:
@@ -64,8 +63,6 @@ Core/Src/sensor_uart.o: ../Core/Src/sensor_uart.c \
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ex.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_flash_ramfunc.h:
-../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c.h:
-../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_i2c_ex.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_pwr_ex.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_spi.h:
@@ -73,3 +70,4 @@ Core/Src/sensor_uart.o: ../Core/Src/sensor_uart.c \
 ../Core/Inc/can_lws.h:
 ../Core/Inc/lis3dsh.h:
 ../Core/Inc/usart.h:
+../Core/Inc/wheel_speed_uart.h:

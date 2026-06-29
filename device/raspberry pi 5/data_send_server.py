@@ -73,15 +73,23 @@ def sample_to_server_dict(sample: dict[str, Any]) -> dict[str, Any]:
     mcu_temp = round(float(sample.get("ecu_temp", 0)), 1)
     steer_angle = round(float(sample.get("steering_angle", 0)), 1)
     steer_speed = round(float(sample.get("steering_speed", 0)), 0)
+    wheel_rpm_right = round(float(sample.get("wheel_rpm_right", 0)), 1)
+    wheel_rpm_left = round(float(sample.get("wheel_rpm_left", 0)), 1)
 
     return {
         "t": int(stm_ms),
         "ecu_temp": mcu_temp,
         "steering_angle": steer_angle,
         "steering_speed": steer_speed,
+        "wheel_rpm_right": wheel_rpm_right,
+        "wheel_rpm_left": wheel_rpm_left,
         "steering": {
             "angle": steer_angle,
             "speed": steer_speed,
+        },
+        "wheel": {
+            "rpm_right": wheel_rpm_right,
+            "rpm_left": wheel_rpm_left,
         },
         "linear": {
             "fr": round(float(sample["FR"]), 2),

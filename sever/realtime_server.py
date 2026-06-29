@@ -40,6 +40,18 @@ sensor_state: dict[str, Any] = {
     "rpm_right": 0,
     "device": "-",
     "updated_at": "",
+    "system": {
+        "lv": False,
+        "hv": False,
+        "rtd": False,
+        "err": False,
+        "sd": False,
+        "telemetry": False,
+        "can": False,
+        "imd": False,
+        "bms": False,
+        "bspd": False,
+    },
 }
 
 
@@ -144,6 +156,7 @@ def update_sensor_state(body: Any, payload: dict[str, Any]) -> None:
 
     sample_accel = _accel_dict(sample) or _accel_dict(body)
     sample_steering = _nested_dict(sample.get("steering")) or _nested_dict(body.get("steering"))
+    sample_wheel = _nested_dict(sample.get("wheel")) or _nested_dict(body.get("wheel"))
     mcu_die_temp = _extract_mcu_die_temp(sample, body)
 
     sensor_state["device"] = device
@@ -181,12 +194,21 @@ def update_sensor_state(body: Any, payload: dict[str, Any]) -> None:
         "linear_rl": (sample.get("linear_rl"), sample_linear.get("rear_left"), sample_linear.get("rl")),
         "linear_rr": (sample.get("linear_rr"), sample_linear.get("rear_right"), sample_linear.get("rr")),
         "rpm_left": (
+            sample.get("wheel_rpm_left"),
+            sample_wheel.get("rpm_left"),
             sample.get("wheel_speed_left"),
+            body.get("wheel_rpm_left"),
             body.get("wheel_speed_left"),
             sample.get("wheel_rpm"),
             body.get("wheel_rpm"),
         ),
-        "rpm_right": (sample.get("wheel_speed_right"), body.get("wheel_speed_right")),
+        "rpm_right": (
+            sample.get("wheel_rpm_right"),
+            sample_wheel.get("rpm_right"),
+            sample.get("wheel_speed_right"),
+            body.get("wheel_rpm_right"),
+            body.get("wheel_speed_right"),
+        ),
     }
 
     metric_keys = set(mapping)
@@ -204,6 +226,28 @@ def update_sensor_state(body: Any, payload: dict[str, Any]) -> None:
             if key == "core_temp":
                 continue
             sensor_state[key] = 0
+
+    system = sample.get("system") if isinstance(sample.get("system"), dict) else body.get("system")
+    if isinstance(system, dict):
+        current = dict(sensor_state.get("system") or {})
+        for flag in ("lv", "hv", "rtd", "err", "sd", "telemetry", "can", "imd", "bms", "bspd"):
+            if flag in system:
+                current[flag] = bool(system.get(flag))
+        sensor_state["system"] = current
+    else:
+        live = True
+        sensor_state["system"] = {
+            "lv": live,
+            "hv": live,
+            "rtd": live,
+            "err": False,
+            "sd": live,
+            "telemetry": live,
+            "can": live,
+            "imd": live,
+            "bms": live,
+            "bspd": live,
+        }
 
 
 @app.get("/")

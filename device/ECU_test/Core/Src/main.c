@@ -20,7 +20,6 @@
 #include "main.h"
 #include "adc.h"
 #include "can.h"
-#include "i2c.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -31,6 +30,7 @@
 #include "sensor_uart.h"
 #include "can_lws.h"
 #include "user_button.h"
+#include "wheel_speed_uart.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -96,7 +96,6 @@ int main(void)
   MX_GPIO_Init();
   MX_CAN1_Init();
   MX_CAN2_Init();
-  MX_I2C1_Init();
   MX_UART4_Init();
   MX_USART2_UART_Init();
   MX_ADC1_Init();
@@ -107,6 +106,7 @@ int main(void)
   SensorUart_Init();
   CAN_LWS_Init();
   UserButton_Init();
+  WheelSpeedUart_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */

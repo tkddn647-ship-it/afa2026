@@ -133,6 +133,9 @@ def update_sensor_state(body: Any, payload: dict[str, Any]) -> None:
             sample = last_sample
 
     linear = body.get("linear") if isinstance(body.get("linear"), dict) else {}
+    wheel = sample.get("wheel") if isinstance(sample.get("wheel"), dict) else {}
+    if not wheel and isinstance(body.get("wheel"), dict):
+        wheel = body.get("wheel")
     mcu_die_temp = _extract_mcu_die_temp(sample, body)
     sensor_state["device"] = device
     sensor_state["updated_at"] = payload["time"]
@@ -154,12 +157,21 @@ def update_sensor_state(body: Any, payload: dict[str, Any]) -> None:
         "linear_rl": (sample.get("linear_rl"), linear.get("rear_left"), linear.get("rl")),
         "linear_rr": (sample.get("linear_rr"), linear.get("rear_right"), linear.get("rr")),
         "rpm_left": (
+            sample.get("wheel_rpm_left"),
+            wheel.get("rpm_left"),
             sample.get("wheel_speed_left"),
+            body.get("wheel_rpm_left"),
             body.get("wheel_speed_left"),
             sample.get("wheel_rpm"),
             body.get("wheel_rpm"),
         ),
-        "rpm_right": (sample.get("wheel_speed_right"), body.get("wheel_speed_right")),
+        "rpm_right": (
+            sample.get("wheel_rpm_right"),
+            wheel.get("rpm_right"),
+            sample.get("wheel_speed_right"),
+            body.get("wheel_rpm_right"),
+            body.get("wheel_speed_right"),
+        ),
     }
 
     for key, candidates in mapping.items():

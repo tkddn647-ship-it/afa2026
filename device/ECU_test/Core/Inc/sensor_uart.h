@@ -33,6 +33,8 @@ typedef struct
   float ecu_temp_c; /* MCU 칩 내부(다이) 온도 °C — ECU/보드 공기 온도 아님 */
   float steering_angle_deg; /* Bosch LWS CAN2 조향각 ° */
   float steering_speed_dps;   /* Bosch LWS CAN2 조향 속도 °/s */
+  float wheel_rpm_right;      /* 오른쪽 바퀴 RPM (STM32 계산) */
+  float wheel_rpm_left;       /* 왼쪽 바퀴 RPM (STM32 계산) */
 } SensorSample_t;
 
 extern SensorSample_t data[SENSOR_BATCH_SIZE];

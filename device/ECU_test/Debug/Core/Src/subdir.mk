@@ -9,7 +9,6 @@ C_SRCS += \
 ../Core/Src/can.c \
 ../Core/Src/can_lws.c \
 ../Core/Src/gpio.c \
-../Core/Src/i2c.c \
 ../Core/Src/lis3dsh.c \
 ../Core/Src/main.c \
 ../Core/Src/sensor_uart.c \
@@ -20,14 +19,14 @@ C_SRCS += \
 ../Core/Src/sysmem.c \
 ../Core/Src/system_stm32f4xx.c \
 ../Core/Src/usart.c \
-../Core/Src/user_button.c 
+../Core/Src/user_button.c \
+../Core/Src/wheel_speed_uart.c 
 
 OBJS += \
 ./Core/Src/adc.o \
 ./Core/Src/can.o \
 ./Core/Src/can_lws.o \
 ./Core/Src/gpio.o \
-./Core/Src/i2c.o \
 ./Core/Src/lis3dsh.o \
 ./Core/Src/main.o \
 ./Core/Src/sensor_uart.o \
@@ -38,14 +37,14 @@ OBJS += \
 ./Core/Src/sysmem.o \
 ./Core/Src/system_stm32f4xx.o \
 ./Core/Src/usart.o \
-./Core/Src/user_button.o 
+./Core/Src/user_button.o \
+./Core/Src/wheel_speed_uart.o 
 
 C_DEPS += \
 ./Core/Src/adc.d \
 ./Core/Src/can.d \
 ./Core/Src/can_lws.d \
 ./Core/Src/gpio.d \
-./Core/Src/i2c.d \
 ./Core/Src/lis3dsh.d \
 ./Core/Src/main.d \
 ./Core/Src/sensor_uart.d \
@@ -56,7 +55,8 @@ C_DEPS += \
 ./Core/Src/sysmem.d \
 ./Core/Src/system_stm32f4xx.d \
 ./Core/Src/usart.d \
-./Core/Src/user_button.d 
+./Core/Src/user_button.d \
+./Core/Src/wheel_speed_uart.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
@@ -66,7 +66,7 @@ Core/Src/%.o Core/Src/%.su Core/Src/%.cyclo: ../Core/Src/%.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/adc.cyclo ./Core/Src/adc.d ./Core/Src/adc.o ./Core/Src/adc.su ./Core/Src/can.cyclo ./Core/Src/can.d ./Core/Src/can.o ./Core/Src/can.su ./Core/Src/can_lws.cyclo ./Core/Src/can_lws.d ./Core/Src/can_lws.o ./Core/Src/can_lws.su ./Core/Src/gpio.cyclo ./Core/Src/gpio.d ./Core/Src/gpio.o ./Core/Src/gpio.su ./Core/Src/i2c.cyclo ./Core/Src/i2c.d ./Core/Src/i2c.o ./Core/Src/i2c.su ./Core/Src/lis3dsh.cyclo ./Core/Src/lis3dsh.d ./Core/Src/lis3dsh.o ./Core/Src/lis3dsh.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/sensor_uart.cyclo ./Core/Src/sensor_uart.d ./Core/Src/sensor_uart.o ./Core/Src/sensor_uart.su ./Core/Src/spi.cyclo ./Core/Src/spi.d ./Core/Src/spi.o ./Core/Src/spi.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/usart.cyclo ./Core/Src/usart.d ./Core/Src/usart.o ./Core/Src/usart.su ./Core/Src/user_button.cyclo ./Core/Src/user_button.d ./Core/Src/user_button.o ./Core/Src/user_button.su
+	-$(RM) ./Core/Src/adc.cyclo ./Core/Src/adc.d ./Core/Src/adc.o ./Core/Src/adc.su ./Core/Src/can.cyclo ./Core/Src/can.d ./Core/Src/can.o ./Core/Src/can.su ./Core/Src/can_lws.cyclo ./Core/Src/can_lws.d ./Core/Src/can_lws.o ./Core/Src/can_lws.su ./Core/Src/gpio.cyclo ./Core/Src/gpio.d ./Core/Src/gpio.o ./Core/Src/gpio.su ./Core/Src/lis3dsh.cyclo ./Core/Src/lis3dsh.d ./Core/Src/lis3dsh.o ./Core/Src/lis3dsh.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/sensor_uart.cyclo ./Core/Src/sensor_uart.d ./Core/Src/sensor_uart.o ./Core/Src/sensor_uart.su ./Core/Src/spi.cyclo ./Core/Src/spi.d ./Core/Src/spi.o ./Core/Src/spi.su ./Core/Src/stm32f4xx_hal_msp.cyclo ./Core/Src/stm32f4xx_hal_msp.d ./Core/Src/stm32f4xx_hal_msp.o ./Core/Src/stm32f4xx_hal_msp.su ./Core/Src/stm32f4xx_it.cyclo ./Core/Src/stm32f4xx_it.d ./Core/Src/stm32f4xx_it.o ./Core/Src/stm32f4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32f4xx.cyclo ./Core/Src/system_stm32f4xx.d ./Core/Src/system_stm32f4xx.o ./Core/Src/system_stm32f4xx.su ./Core/Src/usart.cyclo ./Core/Src/usart.d ./Core/Src/usart.o ./Core/Src/usart.su ./Core/Src/user_button.cyclo ./Core/Src/user_button.d ./Core/Src/user_button.o ./Core/Src/user_button.su ./Core/Src/wheel_speed_uart.cyclo ./Core/Src/wheel_speed_uart.d ./Core/Src/wheel_speed_uart.o ./Core/Src/wheel_speed_uart.su
 
 .PHONY: clean-Core-2f-Src
 

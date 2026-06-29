@@ -102,6 +102,8 @@ LOG_FIELDNAMES = [
     "monotonic_ns",
     "speed",
     "wheel_rpm",
+    "wheel_rpm_right",
+    "wheel_rpm_left",
     "wheel_pulse",
     "wheel_teeth",
     "accelX",
@@ -758,6 +760,9 @@ def _next_wheel_sample_time_ms(device_key: str, sample_ms: int | None) -> tuple[
 
 
 def _apply_wheel_metrics_to_sample(sample: dict[str, Any], device_key: str, sample_ms: int | None) -> None:
+    if _as_float(sample.get("wheel_rpm_right")) is not None or _as_float(sample.get("wheel_rpm_left")) is not None:
+        return
+
     teeth_count = _wheel_teeth_count()
     if teeth_count < 1:
         return
@@ -766,9 +771,11 @@ def _apply_wheel_metrics_to_sample(sample: dict[str, Any], device_key: str, samp
     if pulse_count is None:
         return
 
+    existing_rpm = _as_float(sample.get("wheel_rpm"))
+
     previous_ms, current_ms = _next_wheel_sample_time_ms(device_key, sample_ms)
-    wheel_rpm = 0.0
-    if previous_ms is not None and current_ms is not None:
+    wheel_rpm = existing_rpm if existing_rpm is not None else 0.0
+    if existing_rpm is None and previous_ms is not None and current_ms is not None:
         delta_ms = current_ms - previous_ms
         if delta_ms > 0:
             wheel_rpm = (pulse_count / float(teeth_count)) * (60000.0 / delta_ms)
@@ -1146,6 +1153,8 @@ WIDE_COLUMN_ALIASES = {
     "speed": "speed",
     "velocity": "speed",
     "wheel_rpm": "wheel_rpm",
+    "wheel_rpm_right": "wheel_rpm_right",
+    "wheel_rpm_left": "wheel_rpm_left",
     "wheel_pulse": "wheel_pulse",
     "wheel_teeth": "wheel_teeth",
     "accelx": "accelX",
@@ -1231,6 +1240,8 @@ def _empty_wide_row(payload: dict[str, Any]) -> dict[str, Any]:
         "monotonic_ns": monotonic_ns(),
         "speed": 0,
         "wheel_rpm": 0,
+        "wheel_rpm_right": 0,
+        "wheel_rpm_left": 0,
         "wheel_pulse": 0,
         "wheel_teeth": 0,
         "accelX": 0,
@@ -1349,6 +1360,18 @@ def _apply_sensor_map_to_row(row: dict[str, Any], parsed: dict[str, Any]) -> Non
     if isinstance(steering, dict):
         for key, value in steering.items():
             _set_wide_value(row, f"steering_{key}", value)
+
+    wheel = parsed.get("wheel")
+    if isinstance(wheel, dict):
+        _set_wide_value(row, "wheel_rpm_right", wheel.get("rpm_right"))
+        _set_wide_value(row, "wheel_rpm_left", wheel.get("rpm_left"))
+
+    _set_wide_value(row, "wheel_rpm_right", parsed.get("wheel_rpm_right"))
+    _set_wide_value(row, "wheel_rpm_left", parsed.get("wheel_rpm_left"))
+    if _as_float(parsed.get("wheel_rpm_right")) is not None or _as_float(parsed.get("wheel_rpm_left")) is not None:
+        right_rpm = _as_float(parsed.get("wheel_rpm_right")) or 0.0
+        left_rpm = _as_float(parsed.get("wheel_rpm_left")) or 0.0
+        row["wheel_rpm"] = round((right_rpm + left_rpm) / 2.0, 4)
 
     inverter = parsed.get("inverter")
     if isinstance(inverter, dict):
