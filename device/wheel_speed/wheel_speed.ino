@@ -1,72 +1,105 @@
-// Arduino Uno -> STM32 USART2 (115200)
-// Wiring: Uno D1(TX) -> STM32 PD6(USART2_RX), GND common
-// A0 = 오른쪽 휠스피드, A1 = 왼쪽 휠스피드
-// 20 Hz마다 50 ms 동안 센 펄스 수 전송: WPS,R,<count>,L,<count>
+// Arduino Nano 휠스피드 — 현재 A0(오른쪽)만 사용
+// VOLTAGE_MONITOR=1 이면 A0 전압만 출력
+// VOLTAGE_MONITOR=0 이면 STM32로 WPS,R,<count>,L,0 전송
 
-const int PIN_RIGHT = A0;
-const int PIN_LEFT = A1;
-const float ADC_VREF = 5.0f;
+#define VOLTAGE_MONITOR  1
 
-const float V_HIGH = 4.3f;
-const float V_LOW = 3.6f;
+const int PIN_SENSOR = A0;
 
-const int RAW_HIGH = (int)(V_HIGH * 1023.0f / ADC_VREF + 0.5f);  // 4.3V 이상 → HIGH
-const int RAW_LOW = (int)(V_LOW * 1023.0f / ADC_VREF + 0.5f);    // 3.6V 이하 → LOW
-// 3.6~4.3V 사이(데드밴드)는 이전 상태 유지 → 채터링 방지
+const float MEASURED_VCC = 4.5f;
 
-const unsigned long SEND_INTERVAL_MS = 50;  // 20 Hz
+const float RATIO_HIGH = 4.3f / 5.0f;
+const float RATIO_LOW = 3.6f / 5.0f;
+const int RAW_HIGH = (int)(1023.0f * RATIO_HIGH + 0.5f);
+const int RAW_LOW = (int)(1023.0f * RATIO_LOW + 0.5f);
 
-struct WheelChannel {
-  int pin;
-  unsigned int pulseCount;
-  int lastState;
-};
+#if !VOLTAGE_MONITOR
+const unsigned long SEND_INTERVAL_MS = 50;
 
-WheelChannel wheelRight = {PIN_RIGHT, 0, HIGH};
-WheelChannel wheelLeft = {PIN_LEFT, 0, HIGH};
-
+unsigned int pulseCount = 0;
+int lastState = HIGH;
 unsigned long lastSendMs = 0;
 
-void sendPulseLine(unsigned int rightCount, unsigned int leftCount) {
+void sendPulseLine(unsigned int rightCount) {
   Serial.print(F("WPS,R,"));
   Serial.print(rightCount);
-  Serial.print(F(",L,"));
-  Serial.println(leftCount);
+  Serial.println(F(",L,0"));
 }
 
-void processWheel(WheelChannel &wheel) {
-  const int raw = analogRead(wheel.pin);
+void processSensor() {
+  const int raw = analogRead(PIN_SENSOR);
 
-  int currentState = wheel.lastState;
+  int currentState = lastState;
   if (raw >= RAW_HIGH) {
     currentState = HIGH;
   } else if (raw <= RAW_LOW) {
     currentState = LOW;
   }
 
-  if (wheel.lastState == HIGH && currentState == LOW) {
-    wheel.pulseCount++;
+  if (lastState == HIGH && currentState == LOW) {
+    pulseCount++;
   }
-  wheel.lastState = currentState;
+  lastState = currentState;
 }
+#endif
+
+#if VOLTAGE_MONITOR
+const unsigned long PRINT_INTERVAL_MS = 100;
+unsigned long lastPrintMs = 0;
+
+float rawToVolts(int raw) {
+  return raw * MEASURED_VCC / 1023.0f;
+}
+
+const char *stateLabel(int raw) {
+  if (raw >= RAW_HIGH) {
+    return "HIGH";
+  }
+  if (raw <= RAW_LOW) {
+    return "LOW";
+  }
+  return "MID";
+}
+#endif
 
 void setup() {
   Serial.begin(115200);
-  pinMode(PIN_RIGHT, INPUT);
-  pinMode(PIN_LEFT, INPUT);
-  sendPulseLine(0, 0);
+  pinMode(PIN_SENSOR, INPUT);
+
+#if VOLTAGE_MONITOR
+  Serial.print(F("VOLTAGE_MONITOR A0 only  VCC="));
+  Serial.print(MEASURED_VCC, 2);
+  Serial.print(F("V  HIGH>="));
+  Serial.print(RAW_HIGH);
+  Serial.print(F("  LOW<="));
+  Serial.println(RAW_LOW);
+#else
+  sendPulseLine(0);
+#endif
 }
 
 void loop() {
+#if VOLTAGE_MONITOR
+  const unsigned long now = millis();
+  if (now - lastPrintMs >= PRINT_INTERVAL_MS) {
+    const int raw = analogRead(PIN_SENSOR);
+    Serial.print(F("A0,raw="));
+    Serial.print(raw);
+    Serial.print(F(",V="));
+    Serial.print(rawToVolts(raw), 2);
+    Serial.print(F(",st="));
+    Serial.println(stateLabel(raw));
+    lastPrintMs = now;
+  }
+#else
   const unsigned long now = millis();
 
-  processWheel(wheelRight);
-  processWheel(wheelLeft);
+  processSensor();
 
   if (now - lastSendMs >= SEND_INTERVAL_MS) {
-    sendPulseLine(wheelRight.pulseCount, wheelLeft.pulseCount);
-    wheelRight.pulseCount = 0;
-    wheelLeft.pulseCount = 0;
+    sendPulseLine(pulseCount);
+    pulseCount = 0;
     lastSendMs = now;
   }
+#endif
 }

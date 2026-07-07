@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 import struct
 import base64
@@ -21,7 +21,11 @@ from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
+from nav_config import CAMERA_URL, nav_context
+from afa_auth import install_auth
+
 app = FastAPI()
+install_auth(app)
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 RECORDINGS_DIR = BASE_DIR / "camera_recordings"
@@ -33,11 +37,18 @@ DEFAULT_RECORD_FPS = float(os.getenv("CAMERA_RECORD_FPS", "24"))
 DEFAULT_RECORD_FORMAT = os.getenv("CAMERA_RECORD_FORMAT", "mp4").strip().lower()
 ZIP_RECORDINGS = os.getenv("CAMERA_RECORD_ZIP", "1").strip().lower() in {"1", "true", "yes", "on"}
 RECORD_EXTENSIONS = (".zip", ".mp4", ".mjpg", ".avi")
-PUBLIC_BASE_URL = os.getenv("CAMERA_PUBLIC_BASE_URL", "http://3.39.188.80:8012").rstrip("/")
-MAX_RECORDING_BYTES = int(os.getenv("CAMERA_MAX_RECORDING_BYTES", str(1024 * 1024 * 1024)))
+PUBLIC_BASE_URL = os.getenv("CAMERA_PUBLIC_BASE_URL", CAMERA_URL).rstrip("/")
+MAX_RECORDING_BYTES = int(os.getenv("CAMERA_MAX_RECORDING_BYTES", str(512 * 1024 * 1024)))
+MIN_FREE_DISK_BYTES = int(os.getenv("CAMERA_MIN_FREE_BYTES", str(64 * 1024 * 1024)))
+MAX_FRAME_BYTES = int(os.getenv("CAMERA_MAX_FRAME_BYTES", str(4 * 1024 * 1024)))
+MAX_RECORD_FRAMES = int(os.getenv("CAMERA_MAX_RECORD_FRAMES", "36000"))
 FFMPEG_FINALIZE_TIMEOUT_SEC = int(os.getenv("CAMERA_RECORD_FFMPEG_TIMEOUT_SEC", "600"))
 LOCAL_FFMPEG = BASE_DIR / "bin" / "ffmpeg"
 LOGGER_SNAPSHOT_URL = os.getenv("LOGGER_SNAPSHOT_URL", "http://127.0.0.1:8011/api/live/snapshot").strip()
+LOGGER_OFFSET_URL = os.getenv(
+    "LOGGER_OFFSET_URL",
+    f"{os.getenv('LOGGER_INTERNAL_URL', 'http://127.0.0.1:8000').strip().rstrip('/')}/api/offset/status",
+).strip()
 TELEMETRY_POLL_MS = int(os.getenv("CAMERA_TELEMETRY_POLL_MS", "100"))
 
 camera_state: dict[str, Any] = {
@@ -65,6 +76,7 @@ recording_state: dict[str, Any] = {
     "filename": "",
     "mode": "",
     "mime": "",
+    "capture_source": "camera",
     "frames_written": 0,
     "bytes_written": 0,
     "fps": DEFAULT_RECORD_FPS,
@@ -460,6 +472,20 @@ def _effective_record_format() -> str:
     return _normalize_record_format(DEFAULT_RECORD_FORMAT)
 
 
+def _disk_usage(path: Path | str) -> dict[str, int]:
+    usage = shutil.disk_usage(Path(path).resolve())
+    return {
+        "total_bytes": usage.total,
+        "used_bytes": usage.used,
+        "free_bytes": usage.free,
+    }
+
+
+def _disk_free_ok(path: Path | str, min_free: int = MIN_FREE_DISK_BYTES) -> tuple[bool, dict[str, int]]:
+    stats = _disk_usage(path)
+    return stats["free_bytes"] >= min_free, stats
+
+
 def recording_storage_bytes() -> int:
     return sum(path.stat().st_size for path in _iter_recording_files())
 
@@ -467,6 +493,14 @@ def recording_storage_bytes() -> int:
 def cleanup_recordings(max_bytes: int = MAX_RECORDING_BYTES) -> list[str]:
     deleted: list[str] = []
     files = sorted(_iter_recording_files(), key=lambda path: path.stat().st_mtime)
+    remaining: list[Path] = []
+    for path in files:
+        if path.stat().st_size == 0:
+            path.unlink()
+            deleted.append(path.name)
+            continue
+        remaining.append(path)
+    files = remaining
     total = sum(path.stat().st_size for path in files)
     for path in files:
         if total <= max_bytes:
@@ -525,16 +559,32 @@ def _record_frame(frame_bytes: bytes, width: int, height: int) -> bool:
     with recording_lock:
         if not recording_state["active"] or recording_writer is None:
             return False
+        frames_written = int(recording_state.get("frames_written", 0) or 0)
+        if frames_written >= MAX_RECORD_FRAMES:
+            recording_state["message"] = f"녹화 프레임 상한({MAX_RECORD_FRAMES})에 도달해 중지합니다."
+            writer = recording_writer
+            recording_writer = None
+            recording_state["active"] = False
+        else:
+            writer = None
+            try:
+                recording_writer.write(frame_bytes)
+            except Exception as exc:
+                print(f"[recording] frame write failed: {exc}")
+                recording_state["message"] = f"프레임 저장 실패: {exc}"
+                return False
+            recording_state["frames_written"] = frames_written + 1
+            recording_state["bytes_written"] = int(recording_state["bytes_written"]) + len(frame_bytes)
+            recording_state["updated_at"] = datetime.now(timezone.utc).isoformat()
+            return True
+
+    if writer is not None:
         try:
-            recording_writer.write(frame_bytes)
+            writer.release()
         except Exception as exc:
-            print(f"[recording] frame write failed: {exc}")
-            recording_state["message"] = f"프레임 저장 실패: {exc}"
-            return False
-        recording_state["frames_written"] = int(recording_state["frames_written"]) + 1
-        recording_state["bytes_written"] = int(recording_state["bytes_written"]) + len(frame_bytes)
-        recording_state["updated_at"] = datetime.now(timezone.utc).isoformat()
-        return True
+            print(f"[recording] finalize failed: {exc}")
+            recording_state["message"] = f"녹화 저장 실패: {exc}"
+    return False
 
 
 def put_recording_frame(frame_bytes: bytes, width: int, height: int) -> None:
@@ -572,6 +622,11 @@ def update_camera_state(
     client_session: str = "",
 ) -> tuple[int, bool]:
     global camera_frame_bytes, last_camera_log_at
+    if not frame_bytes:
+        return int(camera_state.get("seq", 0) or 0), False
+    if len(frame_bytes) > MAX_FRAME_BYTES:
+        print(f"[camera] dropped oversized frame: {len(frame_bytes)} bytes")
+        return int(camera_state.get("seq", 0) or 0), False
     now = datetime.now(timezone.utc).isoformat()
     safe_mime = mime or "image/jpeg"
     safe_source = source or "raspberry-pi"
@@ -597,7 +652,7 @@ def update_camera_state(
         camera_state["bytes"] = len(frame_bytes)
         seq = int(camera_state["seq"])
 
-    if recording_state["active"]:
+    if recording_state["active"] and str(recording_state.get("capture_source") or "camera") != "hud":
         put_recording_frame(frame_bytes, width, height)
 
     log_now = monotonic()
@@ -608,6 +663,13 @@ def update_camera_state(
     return seq, True
 
 
+@app.on_event("startup")
+async def camera_startup_event() -> None:
+    deleted = cleanup_recordings()
+    if deleted:
+        print(f"[camera] startup cleanup removed {len(deleted)} recording file(s)")
+
+
 @app.get("/")
 def home(request: Request):
     return templates.TemplateResponse(
@@ -615,6 +677,12 @@ def home(request: Request):
         name="camera.html",
         context={
             "telemetry_poll_ms": max(50, TELEMETRY_POLL_MS),
+            "nav_compact": True,
+            **nav_context("camera", request),
+        },
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
         },
     )
 
@@ -639,6 +707,26 @@ def telemetry_snapshot() -> dict[str, Any]:
         "device": "-",
         "updated_at": "",
         "system": {},
+    }
+
+
+@app.get("/api/offset/status")
+def offset_status() -> dict[str, Any]:
+    try:
+        req = urllib.request.Request(LOGGER_OFFSET_URL, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception as exc:
+        print(f"[offset] status fetch failed: {exc} url={LOGGER_OFFSET_URL}")
+
+    from offset_shared import public_offset_status
+
+    return {
+        "ok": False,
+        "message": "logger offset status unavailable",
+        **public_offset_status({}),
     }
 
 
@@ -761,7 +849,17 @@ def recording_status() -> dict[str, Any]:
             "recent_files": list_recordings(),
             "storage_bytes": recording_storage_bytes(),
             "max_storage_bytes": MAX_RECORDING_BYTES,
+            "disk": _disk_usage(RECORDINGS_DIR),
+            "disk_min_free_bytes": MIN_FREE_DISK_BYTES,
+            "disk_ok": _disk_free_ok(RECORDINGS_DIR)[0],
         }
+
+
+def _normalize_capture_source(value: Any) -> str:
+    lowered = str(value or "camera").strip().lower()
+    if lowered in {"hud", "dashboard", "screen"}:
+        return "hud"
+    return "camera"
 
 
 @app.post("/api/recording/start")
@@ -772,14 +870,22 @@ async def recording_start(request: Request) -> dict[str, Any]:
         if recording_state["active"]:
             return {"ok": False, "message": "recording already active", **recording_state}
 
-    frame_bytes, snapshot = latest_camera_bytes()
-    if not frame_bytes:
-        return {"ok": False, "message": "no camera frame has been received yet"}
+    capture_source = _normalize_capture_source(body.get("capture"))
+    frame_bytes = b""
+    snapshot: dict[str, Any] = {}
 
-    width = _safe_int(body.get("width"), _safe_int(snapshot.get("width")))
-    height = _safe_int(body.get("height"), _safe_int(snapshot.get("height")))
-    if width <= 0 or height <= 0:
-        width, height = _jpeg_dimensions(frame_bytes)
+    if capture_source == "hud":
+        width = max(320, min(3840, _safe_int(body.get("width"), 1280)))
+        height = max(240, min(2160, _safe_int(body.get("height"), 720)))
+    else:
+        frame_bytes, snapshot = latest_camera_bytes()
+        if not frame_bytes:
+            return {"ok": False, "message": "no camera frame has been received yet"}
+
+        width = _safe_int(body.get("width"), _safe_int(snapshot.get("width")))
+        height = _safe_int(body.get("height"), _safe_int(snapshot.get("height")))
+        if width <= 0 or height <= 0:
+            width, height = _jpeg_dimensions(frame_bytes)
 
     fps = max(1.0, min(60.0, _safe_float(body.get("fps"), DEFAULT_RECORD_FPS)))
     started_at = datetime.now(timezone.utc)
@@ -787,6 +893,23 @@ async def recording_start(request: Request) -> dict[str, Any]:
 
     if width <= 0 or height <= 0:
         return {"ok": False, "message": "프레임 크기를 아직 알 수 없어 녹화를 시작할 수 없습니다."}
+
+    disk_ok, disk_stats = _disk_free_ok(RECORDINGS_DIR)
+    if not disk_ok:
+        cleanup_recordings()
+        disk_ok, disk_stats = _disk_free_ok(RECORDINGS_DIR)
+    if not disk_ok:
+        free_mb = disk_stats["free_bytes"] // (1024 * 1024)
+        need_mb = MIN_FREE_DISK_BYTES // (1024 * 1024)
+        return {
+            "ok": False,
+            "message": (
+                f"디스크 여유 공간이 부족해 녹화를 시작할 수 없습니다 "
+                f"({free_mb}MB 남음, 최소 {need_mb}MB 필요). "
+                "서버 용량을 확보한 뒤 다시 시도하세요."
+            ),
+            "disk": disk_stats,
+        }
 
     record_format = _normalize_record_format(str(body.get("format") or _effective_record_format()))
     if record_format not in {"mp4", "avi"}:
@@ -800,7 +923,8 @@ async def recording_start(request: Request) -> dict[str, Any]:
         }
 
     file_ext = ".mp4" if record_format == "mp4" else ".avi"
-    target = _unique_recording_path(str(body.get("filename") or f"camera-{session_id}{file_ext}"), file_ext)
+    default_prefix = "hud" if capture_source == "hud" else "camera"
+    target = _unique_recording_path(str(body.get("filename") or f"{default_prefix}-{session_id}{file_ext}"), file_ext)
     try:
         if record_format == "mp4":
             writer = FfmpegMp4Writer(target, fps)
@@ -822,6 +946,7 @@ async def recording_start(request: Request) -> dict[str, Any]:
                 "filename": target.name,
                 "mode": record_format,
                 "mime": "video/mp4" if record_format == "mp4" else "video/x-msvideo",
+                "capture_source": capture_source,
                 "frames_written": 0,
                 "bytes_written": 0,
                 "fps": fps,
@@ -829,19 +954,48 @@ async def recording_start(request: Request) -> dict[str, Any]:
                 "height": height,
                 "started_at": started_at.isoformat(),
                 "updated_at": started_at.isoformat(),
-                "message": "녹화를 시작했습니다.",
+                "message": "HUD 녹화를 시작했습니다." if capture_source == "hud" else "녹화를 시작했습니다.",
             }
         )
 
-    if not _record_frame(frame_bytes, width, height):
-        stop_recording("첫 프레임 저장에 실패했습니다.")
-        if target.exists():
-            with suppress(OSError):
-                target.unlink()
-        return {"ok": False, "message": recording_state.get("message", "첫 프레임 저장 실패")}
+    if capture_source == "camera":
+        if not _record_frame(frame_bytes, width, height):
+            stop_recording("첫 프레임 저장에 실패했습니다.")
+            if target.exists():
+                with suppress(OSError):
+                    target.unlink()
+            return {"ok": False, "message": recording_state.get("message", "첫 프레임 저장 실패")}
 
-    print(f"[recording] started file={target} size={width}x{height} fps={fps:g} format={record_format}")
+    print(
+        f"[recording] started file={target} size={width}x{height} fps={fps:g} "
+        f"format={record_format} capture={capture_source}"
+    )
     return {"ok": True, **recording_state, "download_url": f"{PUBLIC_BASE_URL}/api/recordings/{target.name}"}
+
+
+@app.post("/api/recording/frame")
+async def recording_frame(request: Request) -> dict[str, Any]:
+    frame_bytes = await request.body()
+    if not frame_bytes:
+        return {"ok": False, "message": "empty frame"}
+    if len(frame_bytes) > MAX_FRAME_BYTES:
+        return {"ok": False, "message": f"frame too large ({len(frame_bytes)} bytes)"}
+
+    with recording_lock:
+        if not recording_state["active"]:
+            return {"ok": False, "message": "recording is not active"}
+        if str(recording_state.get("capture_source") or "camera") != "hud":
+            return {"ok": False, "message": "HUD capture is not active"}
+        width = _safe_int(recording_state.get("width"))
+        height = _safe_int(recording_state.get("height"))
+
+    if not _record_frame(frame_bytes, width, height):
+        with recording_lock:
+            message = recording_state.get("message", "frame write failed")
+        return {"ok": False, "message": message}
+
+    with recording_lock:
+        return {"ok": True, **recording_state}
 
 
 @app.post("/api/recording/stop")

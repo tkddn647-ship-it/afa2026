@@ -15,11 +15,10 @@ STM32(UART4, 460800) -> Raspberry Pi 5 GPIO UART 수신
 
 STM32 한 줄 형식 (CSV, \\n 종료):
   FR,FL,RR,RL,x_g,y_g,z_g
-또는 STM32 타임스탬프(ms) + MCU 칩 내부 온도 + LWS 조향 + 휠스피드 포함:
-  stm_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed,wheel_rpm_right,wheel_rpm_left
+또는 STM32 타임스탬프(ms) + MCU 칩 내부 온도 + LWS 조향 포함:
+  stm_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed
   ecu_temp = STM32 MCU 칩 내부(다이) 온도(°C)
   steering_angle = Bosch LWS 조향각(°), steering_speed = 조향 속도(°/s)
-  wheel_rpm_right / wheel_rpm_left = STM32 계산 좌·우 바퀴 RPM
 """
 
 from __future__ import annotations
@@ -38,6 +37,10 @@ try:
 except ImportError:
     print("[error] pyserial 이 필요합니다.  pip install pyserial")
     sys.exit(1)
+
+
+class UartOpenError(RuntimeError):
+    """UART 포트를 열지 못했을 때 (자동 재시도용)."""
 
 
 DEFAULT_BAUD = 460800
@@ -68,11 +71,9 @@ LINEAR_KEYS = ("FR", "FL", "RR", "RL")
 ACCEL_KEYS = ("x_g", "y_g", "z_g")
 ECU_TEMP_KEY = "ecu_temp"
 STEERING_KEYS = ("steering_angle", "steering_speed")
-WHEEL_KEYS = ("wheel_rpm_right", "wheel_rpm_left")
-SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS + WHEEL_KEYS
+SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS
 LEGACY_SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS
 SENSOR_KEYS_WITH_TEMP = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,)
-SENSOR_KEYS_WITH_STEERING = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS
 BOOT_LINE_PREFIXES = ("STM_", "HB,", "LWS_CAL")
 
 # 수신 버퍼 (20 Hz 마다 초기화)
@@ -286,13 +287,25 @@ def print_uart_port_help(requested: str = "") -> None:
     print("[hint] 배선:")
 
 
-def open_uart_serial(port: str, baud: int, timeout: float) -> serial.Serial:
+def open_uart_serial(
+    port: str,
+    baud: int,
+    timeout: float,
+    *,
+    fatal: bool = True,
+) -> serial.Serial:
     requested = port.strip()
     candidates = uart_open_candidates(port)
+
+    def fail(message: str) -> None:
+        if fatal:
+            sys.exit(1)
+        raise UartOpenError(message)
+
     if not candidates:
         print(f"[error] UART 포트를 찾을 수 없습니다. (uart_stm {UART_MODULE_VERSION})")
         print_uart_port_help(requested)
-        sys.exit(1)
+        fail("UART 포트 없음")
 
     last_exc: Exception | None = None
     explicit = requested.lower() not in ("auto", "")
@@ -307,10 +320,10 @@ def open_uart_serial(port: str, baud: int, timeout: float) -> serial.Serial:
                 print("[hint] miniterm 종료: Ctrl+]  (Ctrl+C 아님)")
                 print("       sudo fuser -v /dev/ttyAMA0 /dev/serial0")
                 print("       sudo kill <PID>")
-                sys.exit(1)
+                fail(f"{path} 사용 중")
             if explicit:
                 _print_open_failure_hints(path, exc)
-                sys.exit(1)
+                fail(f"{path} 열기 실패: {exc}")
             continue
 
         if requested.lower() == "auto":
@@ -327,7 +340,7 @@ def open_uart_serial(port: str, baud: int, timeout: float) -> serial.Serial:
     print(f"[error] UART 열기 실패: {last_exc}")
     print(f"[info] uart_stm 버전: {UART_MODULE_VERSION}")
     print_uart_port_help(requested)
-    sys.exit(1)
+    fail(f"UART 열기 실패: {last_exc}")
 
 
 def parse_line(line: str) -> dict[str, Any] | None:
@@ -348,11 +361,12 @@ def parse_line(line: str) -> dict[str, Any] | None:
         values = parts
 
     if len(values) == len(LEGACY_SENSOR_KEYS):
-        values = [*values, "0", "0", "0", "0", "0"]
+        values = [*values, "0", "0", "0"]
     elif len(values) == len(SENSOR_KEYS_WITH_TEMP):
-        values = [*values, "0", "0", "0", "0"]
-    elif len(values) == len(SENSOR_KEYS_WITH_STEERING):
         values = [*values, "0", "0"]
+    elif len(values) > len(SENSOR_KEYS):
+        # STM 펌웨어가 끝에 추가 필드를 붙이는 경우 앞 10개만 사용
+        values = values[: len(SENSOR_KEYS)]
     elif len(values) != len(SENSOR_KEYS):
         return None
 

@@ -1,0 +1,1408 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>실시간 모니터링</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg0: #05080f;
+      --bg1: #0a101c;
+      --surface: rgba(16, 24, 40, 0.72);
+      --surface2: rgba(10, 16, 28, 0.9);
+      --line: rgba(120, 160, 220, 0.14);
+      --line-strong: rgba(120, 160, 220, 0.28);
+      --text: #eef4ff;
+      --muted: #8ba3c7;
+      --accent: #5cc8ff;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --radius: 14px;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+      --chart-h: 104px;
+      --chart-sm-h: 72px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(37, 99, 235, 0.18), transparent 55%),
+        radial-gradient(ellipse 60% 40% at 90% 0%, rgba(14, 165, 233, 0.1), transparent 50%),
+        linear-gradient(180deg, var(--bg1) 0%, var(--bg0) 100%);
+    }
+
+    .page {
+      width: min(1720px, 100%);
+      margin: 0 auto;
+      padding: 20px 24px 32px;
+    }
+
+    /* ── Header ── */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .chips {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: var(--surface2);
+      border: 1px solid var(--line);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    .chip strong {
+      color: var(--text);
+      font-size: 0.9rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .chip .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 10px var(--warn);
+    }
+
+    .chip.online .dot {
+      background: var(--good);
+      box-shadow: 0 0 10px var(--good);
+      animation: pulse 2s ease infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.45; }
+    }
+
+    .topbar .server-nav a,
+    .topbar .server-nav__logout-btn {
+      min-height: 38px;
+      padding: 0 16px;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      border: 1px solid var(--line-strong);
+      background: var(--surface2);
+      color: #dce8ff;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    }
+
+    .topbar .server-nav a:hover {
+      border-color: rgba(92, 200, 255, 0.5);
+      background: rgba(30, 58, 95, 0.6);
+    }
+
+    .topbar .server-nav a.active {
+      border-color: rgba(92, 200, 255, 0.65);
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.35), rgba(20, 50, 90, 0.5));
+      color: #fff;
+    }
+
+    .topbar .server-nav__logout-btn {
+      border-color: rgba(248, 113, 113, 0.35);
+      background: rgba(80, 20, 30, 0.45);
+      color: #fecdd3;
+    }
+
+    .topbar .server-nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Layout ── */
+    .layout-main {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      gap: 14px;
+      margin-bottom: 14px;
+      align-items: start;
+    }
+
+    .layout-left {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .category-nav {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .category-btn {
+      min-height: 52px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(165deg, rgba(18, 28, 48, 0.95), rgba(8, 12, 22, 0.98));
+      color: #dce8ff;
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    }
+
+    .category-btn:hover {
+      border-color: rgba(92, 200, 255, 0.5);
+      background: rgba(30, 58, 95, 0.55);
+    }
+
+    .category-btn.active {
+      border-color: rgba(92, 200, 255, 0.65);
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.35), rgba(20, 50, 90, 0.5));
+      color: #fff;
+    }
+
+    .category-btn small {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+
+    .telemetry-panel .metric-card {
+      padding: 12px 14px;
+    }
+
+    .telemetry-sections {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .telemetry-section {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid var(--line);
+    }
+
+    .telemetry-section-title {
+      margin: 0 0 10px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .telemetry-section--motion .metrics-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .telemetry-section--wheel .metrics-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .telemetry-section--bms .metrics-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .graph-backdrop {
+      position: fixed;
+      inset: 0;
+      background: transparent;
+      z-index: 40;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .graph-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .graph-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(760px, 96vw);
+      z-index: 41;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, rgba(16, 24, 40, 0.98), rgba(5, 8, 15, 0.99));
+      border-left: 1px solid var(--line-strong);
+      box-shadow: -8px 0 40px rgba(0, 0, 0, 0.5);
+      transform: translateX(105%);
+      transition: transform 0.24s ease;
+    }
+
+    .graph-drawer.open {
+      transform: translateX(0);
+    }
+
+    .graph-drawer-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+
+    .graph-drawer-head h2 {
+      margin: 0;
+      flex: 1;
+      font-size: 1.05rem;
+      font-weight: 800;
+    }
+
+    .graph-drawer-close {
+      min-height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--surface2);
+      color: #dce8ff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .graph-drawer-body {
+      flex: 1;
+      overflow: auto;
+      padding: 14px 16px 20px;
+    }
+
+    .graph-panel {
+      display: none;
+    }
+
+    .graph-panel.active {
+      display: block;
+    }
+
+    .graph-panel .section-title {
+      margin-top: 0;
+    }
+
+    .graph-drawer-body .graph-panel {
+      padding: 4px 2px 10px;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    .subsystem-status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .status-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-width: 54px;
+    }
+
+    .status-badge .badge-box {
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 1rem;
+      font-weight: 900;
+      color: #fff;
+      background: rgba(127, 29, 29, 0.35);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    }
+
+    .status-badge.ok .badge-box {
+      background: rgba(6, 78, 59, 0.35);
+      border-color: rgba(52, 211, 153, 0.45);
+      color: #bbf7d0;
+    }
+
+    .status-badge.info.active .badge-box {
+      background: rgba(30, 58, 95, 0.55);
+      border-color: rgba(92, 200, 255, 0.45);
+      color: #dbeafe;
+    }
+
+    .status-badge.mode .badge-box {
+      font-size: 0.72rem;
+      padding: 0 4px;
+      line-height: 1.1;
+      text-align: center;
+      word-break: break-word;
+    }
+
+    .status-badge .badge-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.25;
+      max-width: 72px;
+    }
+
+    .subsystem-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .subsystem-metric {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(0, 0, 0, 0.22);
+    }
+
+    .subsystem-metric-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .subsystem-metric-label {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #dce8ff;
+    }
+
+    .subsystem-metric-value {
+      font-size: 1.45rem;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      color: #fff;
+      text-align: right;
+    }
+
+    .subsystem-metric-value .u {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+
+    .subsystem-state-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(0, 0, 0, 0.22);
+      margin-bottom: 12px;
+    }
+
+    .subsystem-state-label {
+      font-size: 0.82rem;
+      font-weight: 800;
+      color: #dce8ff;
+    }
+
+    .subsystem-state-value {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #fff;
+      text-align: right;
+    }
+
+    .subsystem-extra-title {
+      margin: 18px 0 10px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .telemetry-panel {
+      min-height: 0;
+    }
+
+    .metrics-body {
+      padding: 12px 14px 14px;
+    }
+
+    .panel {
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px 0;
+    }
+
+    .panel-title {
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .panel-title::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      background: var(--accent);
+      margin-right: 8px;
+      vertical-align: middle;
+      box-shadow: 0 0 12px rgba(92, 200, 255, 0.5);
+    }
+
+    /* ── Camera ── */
+    .camera-body {
+      padding: 0 14px 14px;
+    }
+
+    .camera-frame {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      aspect-ratio: 16 / 10;
+      min-height: 300px;
+      background: #000;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.8);
+    }
+
+    .camera-frame::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: 12px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    #cameraPreview {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      pointer-events: none;
+      -webkit-user-drag: none;
+      user-select: none;
+    }
+
+    #cameraPreview.waiting { opacity: 0; }
+
+    #cameraOverlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #7d95b8;
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      background: radial-gradient(circle at center, rgba(15, 23, 42, 0.5), rgba(0, 0, 0, 0.85));
+      pointer-events: none;
+    }
+
+    #cameraOverlay.visible {
+      display: flex;
+    }
+
+    /* ── Metrics ── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .motor-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+
+    .metric-card {
+      --accent-color: #5cc8ff;
+      position: relative;
+      padding: 10px 12px 12px;
+      border-radius: 12px;
+      background: linear-gradient(165deg, rgba(18, 28, 48, 0.95) 0%, rgba(8, 12, 22, 0.98) 100%);
+      border: 1px solid var(--line);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+      opacity: 0.85;
+    }
+
+    .metric-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .metric-head .metric-label {
+      margin-bottom: 0;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .metric-head .metric-value {
+      flex-shrink: 0;
+      font-size: 1.15rem;
+    }
+
+    .metric-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .metric-label {
+      display: block;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .metric-value {
+      font-size: 1.2rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      line-height: 1.1;
+    }
+
+    .metric-value .u {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    .chart-box {
+      position: relative;
+      width: 100%;
+      height: var(--chart-h);
+      min-height: var(--chart-h);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .chart-box canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chart-box.sm {
+      height: var(--chart-sm-h);
+      min-height: var(--chart-sm-h);
+    }
+
+    .sensor-panel {
+      padding: 0;
+    }
+
+    .motor-panel {
+      padding: 0;
+      margin-top: 0;
+    }
+
+    .section-title {
+      margin: 0 0 14px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1200px) {
+      .layout-main { grid-template-columns: 1fr; }
+      .telemetry-section--motion .metrics-grid,
+      .telemetry-section--wheel .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 768px) {
+      .page { padding: 14px; }
+      .metrics-grid,
+      .motor-grid,
+      .category-nav,
+      .telemetry-section--motion .metrics-grid,
+      .telemetry-section--wheel .metrics-grid,
+      .telemetry-section--bms .metrics-grid { grid-template-columns: 1fr; }
+      .topbar { flex-direction: column; align-items: stretch; }
+      .graph-drawer { width: 100vw; }
+    }
+  </style>
+  {% include "partials/mobile_compact.html" %}
+</head>
+<body class="realtime-page">
+  <div class="page">
+    <div class="topbar">
+      <div class="brand">
+        <h1>실시간 모니터링</h1>
+        <p>센서 · 카메라 · 30초 트렌드</p>
+        <div class="chips">
+          <span class="chip" id="statusChip"><span class="dot"></span>상태 <strong id="status">polling</strong></span>
+          <span class="chip"><span>5초 평균</span> <strong><span id="hz5">0.0</span> Hz</strong></span>
+          <span class="chip offset-chip desktop-only" id="offsetChip"><span>오프셋</span> <strong id="offsetStatus">없음</strong></span>
+        </div>
+      </div>
+      {% include "partials/server_nav.html" %}
+    </div>
+
+    {% include "partials/offset_status.html" %}
+
+    <section class="layout-main">
+      <div class="layout-left">
+        <div class="panel camera-panel">
+          <div class="panel-head"><span class="panel-title">Live Camera</span></div>
+          <div class="camera-body">
+            <div class="camera-frame">
+              <img id="cameraPreview" alt="" draggable="false" decoding="async" class="waiting">
+              <div id="cameraOverlay" class="visible">Stream Waiting</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="category-nav desktop-only">
+          <button type="button" class="category-btn" data-category="sensor">
+            차량센서
+            <small>가속도 · 리니어 · 조향</small>
+          </button>
+          <button type="button" class="category-btn" data-category="motor">
+            모터 그래프
+            <small>Inverter · 전류 · 토크</small>
+          </button>
+          <button type="button" class="category-btn" data-category="bms">
+            BMS 그래프
+            <small>전압 · 전류 · 온도</small>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel telemetry-panel">
+        <div class="panel-head"><span class="panel-title">Vehicle Telemetry</span></div>
+        <div class="metrics-body telemetry-sections">
+          <section class="telemetry-section telemetry-section--motion">
+            <h3 class="telemetry-section-title">모션</h3>
+            <div class="metrics-grid">
+              <div class="metric-card" style="--accent-color:#5cc8ff">
+                <span class="metric-label">속도</span>
+                <span class="metric-value"><span id="speed">0</span><span class="u">km/h</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#f0b35c">
+                <span class="metric-label">엑셀</span>
+                <span class="metric-value" id="accelValue">0</span>
+              </div>
+              <div class="metric-card" style="--accent-color:#ff7d9d">
+                <span class="metric-label">브레이크</span>
+                <span class="metric-value" id="brakeValue">0</span>
+              </div>
+              <div class="metric-card" style="--accent-color:#c084fc">
+                <span class="metric-label">스티어링 각도</span>
+                <span class="metric-value"><span id="steeringAngle">0</span><span class="u">°</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#a78bfa">
+                <span class="metric-label">스티어링 속도</span>
+                <span class="metric-value"><span id="steeringSpeed">0</span><span class="u">°/s</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#ef4444">
+                <span class="metric-label">ECU 온도</span>
+                <span class="metric-value"><span id="coreTemp">0.0</span><span class="u">°C</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#a855f7">
+                <span class="metric-label">가속 X (G)</span>
+                <span class="metric-value" id="accelX">0.0</span>
+              </div>
+              <div class="metric-card" style="--accent-color:#3b82f6">
+                <span class="metric-label">가속 Y (G)</span>
+                <span class="metric-value" id="accelY">0.0</span>
+              </div>
+              <div class="metric-card" style="--accent-color:#22c55e">
+                <span class="metric-label">가속 Z (G)</span>
+                <span class="metric-value" id="accelZ">0.0</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="telemetry-section telemetry-section--wheel">
+            <h3 class="telemetry-section-title">바퀴</h3>
+            <div class="metrics-grid">
+              <div class="metric-card" style="--accent-color:#14b8a6">
+                <span class="metric-label">FL Linear</span>
+                <span class="metric-value"><span id="linearFl">0.0</span><span class="u">mm</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#38bdf8">
+                <span class="metric-label">FR Linear</span>
+                <span class="metric-value"><span id="linearFr">0.0</span><span class="u">mm</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#8b5cf6">
+                <span class="metric-label">RL Linear</span>
+                <span class="metric-value"><span id="linearRl">0.0</span><span class="u">mm</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#ec4899">
+                <span class="metric-label">RR Linear</span>
+                <span class="metric-value"><span id="linearRr">0.0</span><span class="u">mm</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#f59e0b">
+                <span class="metric-label">RPM 좌</span>
+                <span class="metric-value" id="rpmLeft">0</span>
+              </div>
+              <div class="metric-card" style="--accent-color:#fb7185">
+                <span class="metric-label">RPM 우</span>
+                <span class="metric-value" id="rpmRight">0</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="telemetry-section telemetry-section--bms">
+            <h3 class="telemetry-section-title">BMS</h3>
+            <div class="metrics-grid">
+              <div class="metric-card" style="--accent-color:#34d399">
+                <span class="metric-label">잔량</span>
+                <span class="metric-value"><span id="bmsCharge">0.0</span><span class="u">%</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#60a5fa">
+                <span class="metric-label">전압</span>
+                <span class="metric-value"><span id="bmsVoltage">0.0</span><span class="u">V</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#facc15">
+                <span class="metric-label">전류</span>
+                <span class="metric-value"><span id="bmsCurrent">0.0</span><span class="u">A</span></span>
+              </div>
+              <div class="metric-card" style="--accent-color:#f97316">
+                <span class="metric-label">DCL</span>
+                <span class="metric-value"><span id="bmsDcl">0.0</span><span class="u">A</span></span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <div class="graph-backdrop desktop-only" id="graphBackdrop"></div>
+    <aside class="graph-drawer desktop-only" id="graphDrawer" aria-hidden="true">
+      <div class="graph-drawer-head">
+        <h2 id="graphDrawerTitle">그래프</h2>
+        <button type="button" class="graph-drawer-close" id="closeGraphDrawer">닫기</button>
+      </div>
+      <div class="graph-drawer-body">
+        <section class="panel sensor-panel graph-panel" id="graphPanelSensor" data-category="sensor">
+          <h2 class="section-title">차량센서</h2>
+          <div class="subsystem-extra-title">가속도</div>
+          <div class="motor-grid" id="sensorAccelGrid"></div>
+          <div class="subsystem-extra-title">리니어</div>
+          <div class="motor-grid" id="sensorLinearGrid"></div>
+          <div class="subsystem-extra-title">조향</div>
+          <div class="motor-grid" id="sensorSteeringGrid"></div>
+        </section>
+
+        <section class="panel motor-panel graph-panel" id="graphPanelMotor" data-category="motor">
+          <h2 class="section-title">모터</h2>
+          <div class="subsystem-status-row" id="motorStatusRow"></div>
+          <div class="subsystem-state-row">
+            <span class="subsystem-state-label">VSM</span>
+            <span class="subsystem-state-value" id="motorVsmState">N/A</span>
+          </div>
+          <div class="subsystem-state-row">
+            <span class="subsystem-state-label">INV</span>
+            <span class="subsystem-state-value" id="motorInvState">N/A</span>
+          </div>
+          <div class="subsystem-metrics" id="motorPrimaryMetrics"></div>
+          <div class="subsystem-extra-title">상세 그래프</div>
+          <div class="motor-grid" id="motorGrid"></div>
+        </section>
+
+        <section class="panel motor-panel graph-panel" id="graphPanelBms" data-category="bms">
+          <h2 class="section-title">HV / BMS</h2>
+          <div class="subsystem-status-row" id="bmsStatusRow"></div>
+          <div class="subsystem-metrics" id="bmsPrimaryMetrics"></div>
+          <div class="subsystem-extra-title">상세 그래프</div>
+          <div class="motor-grid" id="bmsGrid"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const WINDOW_MS = 30000;
+    const CAMERA_STREAM_BASE = '{{ nav.camera_origin }}'.replace(/\/$/, '') + '/api/camera/stream.mjpg';
+    const histories = new Map();
+    let cameraRetryTimer = null;
+
+    const MOTOR_SERIES = [
+      { id: 'inv_temp_igt', key: 'inv_temp_igt', label: 'IGBT 온도', color: '#f97316', digits: 1, unit: '°C' },
+      { id: 'inv_temp_rtd1', key: 'inv_temp_rtd1', label: 'RTD1 온도', color: '#fb923c', digits: 1, unit: '°C' },
+      { id: 'inv_temp_rtd2', key: 'inv_temp_rtd2', label: 'RTD2 온도', color: '#fdba74', digits: 1, unit: '°C' },
+      { id: 'inv_temp_gatedriver', key: 'inv_temp_gatedriver', label: 'Gate Driver', color: '#ea580c', digits: 1, unit: '°C' },
+      { id: 'inv_temp_controlboard', key: 'inv_temp_controlboard', label: 'Control Board', color: '#c2410c', digits: 1, unit: '°C' },
+      { id: 'inv_temp_coolant', key: 'inv_temp_coolant', label: 'Coolant', color: '#38bdf8', digits: 1, unit: '°C' },
+      { id: 'inv_temp_hotspot', key: 'inv_temp_hotspot', label: 'Hotspot', color: '#f43f5e', digits: 1, unit: '°C' },
+      { id: 'inv_temp_motor', key: 'inv_temp_motor', label: 'Motor 온도', color: '#e879f9', digits: 1, unit: '°C' },
+      { id: 'inv_motor_speed', key: 'inv_motor_speed', label: '모터 속도', color: '#22d3ee', digits: 0, unit: 'rpm' },
+      { id: 'inv_motor_angle', key: 'inv_motor_angle', label: '모터 각도', color: '#2dd4bf', digits: 1, unit: '°' },
+      { id: 'inv_dc_current', key: 'inv_dc_current', label: 'DC 전류', color: '#facc15', digits: 2, unit: 'A' },
+      { id: 'inv_a_current', key: 'inv_a_current', label: 'A상 전류', color: '#fde047', digits: 2, unit: 'A' },
+      { id: 'inv_b_current', key: 'inv_b_current', label: 'B상 전류', color: '#fbbf24', digits: 2, unit: 'A' },
+      { id: 'inv_c_current', key: 'inv_c_current', label: 'C상 전류', color: '#f59e0b', digits: 2, unit: 'A' },
+      { id: 'inv_voltage', key: 'inv_voltage', label: 'DC 전압', color: '#60a5fa', digits: 1, unit: 'V' },
+      { id: 'inv_voltage_output', key: 'inv_voltage_output', label: '출력 전압', color: '#818cf8', digits: 1, unit: 'V' },
+      { id: 'inv_torque_feedback', key: 'inv_torque_feedback', label: '토크 피드백', color: '#a3e635', digits: 2, unit: 'Nm' },
+      { id: 'inv_torque_commanded', key: 'inv_torque_commanded', label: '토크 명령', color: '#4ade80', digits: 2, unit: 'Nm' },
+      { id: 'inv_id_feedback', key: 'inv_id_feedback', label: 'Id 피드백', color: '#c084fc', digits: 2, unit: 'A' },
+      { id: 'inv_iq_feedback', key: 'inv_iq_feedback', label: 'Iq 피드백', color: '#d946ef', digits: 2, unit: 'A' },
+    ];
+
+    const BMS_SERIES = [
+      { id: 'bms_voltage', key: 'bms_voltage', label: '팩 전압', color: '#60a5fa', digits: 1, unit: 'V' },
+      { id: 'bms_current', key: 'bms_current', label: '팩 전류', color: '#facc15', digits: 2, unit: 'A' },
+      { id: 'bms_charge', key: 'bms_charge', label: '충전량', color: '#34d399', digits: 1, unit: '%' },
+      { id: 'bms_capacity', key: 'bms_capacity', label: '용량', color: '#2dd4bf', digits: 1, unit: 'Ah' },
+      { id: 'bms_ccl', key: 'bms_ccl', label: 'CCL', color: '#fb7185', digits: 1, unit: 'A' },
+      { id: 'bms_dcl', key: 'bms_dcl', label: 'DCL', color: '#f97316', digits: 1, unit: 'A' },
+      { id: 'bms_temp_maxvalue', key: 'bms_temp_maxvalue', label: '최고 온도', color: '#ef4444', digits: 1, unit: '°C' },
+      { id: 'bms_temp_minvalue', key: 'bms_temp_minvalue', label: '최저 온도', color: '#38bdf8', digits: 1, unit: '°C' },
+      { id: 'bms_temp_internal', key: 'bms_temp_internal', label: '내부 온도', color: '#a78bfa', digits: 1, unit: '°C' },
+      { id: 'bms_temp_maxid', key: 'bms_temp_maxid', label: '최고 온도 ID', color: '#f472b6', digits: 0, unit: '' },
+      { id: 'bms_temp_minid', key: 'bms_temp_minid', label: '최저 온도 ID', color: '#818cf8', digits: 0, unit: '' },
+    ];
+
+    const MOTOR_PRIMARY_ORDER = ['inv_motor_speed', 'inv_torque_feedback', 'inv_temp_motor', 'inv_temp_igt'];
+    const BMS_PRIMARY_ORDER = ['bms_charge', 'bms_capacity', 'bms_voltage', 'bms_current', 'bms_dcl', 'bms_temp_maxvalue'];
+    const MOTOR_PRIMARY_LABELS = {
+      inv_motor_speed: 'RPM',
+      inv_torque_feedback: '토크',
+      inv_temp_motor: '온도',
+      inv_temp_igt: 'IGBT',
+    };
+    const BMS_PRIMARY_LABELS = {
+      bms_charge: '잔량',
+      bms_capacity: '용량',
+      bms_voltage: '전압',
+      bms_current: '전류',
+      bms_dcl: 'DCL',
+      bms_temp_maxvalue: '최고',
+    };
+    const BMS_PRIMARY_GRAPHLESS = new Set(['bms_capacity']);
+
+    const seriesById = (list) => Object.fromEntries(list.map((item) => [item.id, item]));
+    const MOTOR_BY_ID = seriesById(MOTOR_SERIES);
+    const BMS_BY_ID = seriesById(BMS_SERIES);
+    const MOTOR_PRIMARY_SERIES = MOTOR_PRIMARY_ORDER.map((id) => MOTOR_BY_ID[id]).filter(Boolean);
+    const BMS_PRIMARY_SERIES = BMS_PRIMARY_ORDER.map((id) => BMS_BY_ID[id]).filter(Boolean);
+    const MOTOR_EXTRA_SERIES = MOTOR_SERIES.filter((item) => !MOTOR_PRIMARY_ORDER.includes(item.id));
+    const BMS_EXTRA_SERIES = BMS_SERIES.filter((item) => !BMS_PRIMARY_ORDER.includes(item.id));
+
+    const SENSOR_ACCEL_SERIES = [
+      { id: 'accel_x', key: 'accel_x', label: '가속 X', color: '#a855f7', digits: 2, unit: 'G' },
+      { id: 'accel_y', key: 'accel_y', label: '가속 Y', color: '#3b82f6', digits: 2, unit: 'G' },
+      { id: 'accel_z', key: 'accel_z', label: '가속 Z', color: '#22c55e', digits: 2, unit: 'G' },
+    ];
+    const SENSOR_LINEAR_SERIES = [
+      { id: 'linear_fl', key: 'linear_fl', label: 'FL Linear', color: '#14b8a6', digits: 1, unit: 'mm' },
+      { id: 'linear_fr', key: 'linear_fr', label: 'FR Linear', color: '#38bdf8', digits: 1, unit: 'mm' },
+      { id: 'linear_rl', key: 'linear_rl', label: 'RL Linear', color: '#8b5cf6', digits: 1, unit: 'mm' },
+      { id: 'linear_rr', key: 'linear_rr', label: 'RR Linear', color: '#ec4899', digits: 1, unit: 'mm' },
+    ];
+    const SENSOR_STEERING_SERIES = [
+      { id: 'steering_angle', key: 'steering_angle', label: '조향각', color: '#c084fc', digits: 0, unit: '°' },
+      { id: 'steering_speed', key: 'steering_speed', label: '조향속도', color: '#a78bfa', digits: 0, unit: '°/s' },
+    ];
+    const SENSOR_SERIES = [...SENSOR_ACCEL_SERIES, ...SENSOR_LINEAR_SERIES, ...SENSOR_STEERING_SERIES];
+
+    const GRAPH_SERIES = [];
+    const CATEGORY_LABELS = {
+      sensor: '차량센서',
+      motor: '모터 그래프',
+      bms: 'BMS 그래프',
+    };
+    let activeGraphCategory = '';
+
+    function buildMetricGrid(gridId, seriesList, valuePrefix) {
+      const grid = document.getElementById(gridId);
+      if (!grid) return;
+      seriesList.forEach((item) => {
+        histories.set(item.id, []);
+        GRAPH_SERIES.push({ id: item.id, key: item.key, color: item.color });
+        const card = document.createElement('div');
+        card.className = 'metric-card';
+        card.style.setProperty('--accent-color', item.color);
+        const unitHtml = item.unit ? '<span class="u">' + item.unit + '</span>' : '';
+        card.innerHTML =
+          '<div class="metric-head">' +
+            '<span class="metric-label">' + item.label + '</span>' +
+            '<span class="metric-value"><span id="' + valuePrefix + item.id + '">0</span>' + unitHtml + '</span>' +
+          '</div>' +
+          '<div class="chart-box sm"><canvas id="canvas-' + item.id + '"></canvas></div>';
+        grid.appendChild(card);
+      });
+    }
+
+    function registerGraphSeries(item) {
+      histories.set(item.id, []);
+      GRAPH_SERIES.push({ id: item.id, key: item.key, color: item.color });
+    }
+
+    function buildPrimaryMetrics(containerId, seriesList, options) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const labels = options.labels || {};
+      const graphless = options.graphless || new Set();
+      const suffixKeys = options.suffixKeys || {};
+
+      seriesList.forEach((item) => {
+        registerGraphSeries(item);
+        const label = labels[item.id] || item.label;
+        const unitHtml = item.unit ? '<span class="u">' + item.unit + '</span>' : '';
+        const suffixKey = suffixKeys[item.id];
+        const suffixHtml = suffixKey ? ' <span class="u" id="primary-suffix-' + item.id + '"></span>' : '';
+        const graphHtml = graphless.has(item.id)
+          ? ''
+          : '<div class="chart-box sm"><canvas id="canvas-' + item.id + '"></canvas></div>';
+        const block = document.createElement('div');
+        block.className = 'subsystem-metric';
+        block.innerHTML =
+          '<div class="subsystem-metric-head">' +
+            '<span class="subsystem-metric-label">' + label + '</span>' +
+            '<span class="subsystem-metric-value">' +
+              '<span id="primary-val-' + item.id + '">0</span>' + suffixHtml + unitHtml +
+            '</span>' +
+          '</div>' +
+          graphHtml;
+        container.appendChild(block);
+      });
+    }
+
+    function renderStatusRow(rowId, items) {
+      const row = document.getElementById(rowId);
+      if (!row) return;
+      row.innerHTML = '';
+      (items || []).forEach((item) => {
+        const badge = document.createElement('div');
+        const classes = ['status-badge'];
+        if (item.kind === 'mode') {
+          classes.push('mode');
+          if (item.active) classes.push('active');
+        } else if (item.kind === 'info') {
+          if (item.active) classes.push('info', 'active');
+          else classes.push('ok');
+        } else if (item.active) {
+          classes.push('active');
+        } else {
+          classes.push('ok');
+        }
+        badge.className = classes.join(' ');
+        const boxText = item.kind === 'mode' ? (item.text || 'N/A') : item.code;
+        badge.innerHTML =
+          '<div class="badge-box">' + boxText + '</div>' +
+          '<div class="badge-label">' + item.label + '</div>';
+        row.appendChild(badge);
+      });
+    }
+
+    function formatPrimaryValue(item, snapshot) {
+      const raw = snapshot[item.key];
+      const n = Number(raw);
+      const digits = item.digits ?? 0;
+      if (Number.isFinite(n)) return n.toFixed(digits);
+      return raw == null || raw === '' ? '0' : String(raw);
+    }
+
+    function updatePrimaryMetrics(seriesList, snapshot, options) {
+      const suffixKeys = options.suffixKeys || {};
+      seriesList.forEach((item) => {
+        const valueNode = document.getElementById('primary-val-' + item.id);
+        if (valueNode) valueNode.textContent = formatPrimaryValue(item, snapshot);
+        const suffixKey = suffixKeys[item.id];
+        if (suffixKey) {
+          const suffixNode = document.getElementById('primary-suffix-' + item.id);
+          if (suffixNode) {
+            const suffixValue = snapshot[suffixKey];
+            suffixNode.textContent = suffixValue == null || suffixValue === '' ? '' : ('#' + suffixValue);
+          }
+        }
+      });
+    }
+
+    buildMetricGrid('sensorAccelGrid', SENSOR_ACCEL_SERIES, 'val-');
+    buildMetricGrid('sensorLinearGrid', SENSOR_LINEAR_SERIES, 'val-');
+    buildMetricGrid('sensorSteeringGrid', SENSOR_STEERING_SERIES, 'val-');
+    buildPrimaryMetrics('motorPrimaryMetrics', MOTOR_PRIMARY_SERIES, {
+      labels: MOTOR_PRIMARY_LABELS,
+    });
+    buildPrimaryMetrics('bmsPrimaryMetrics', BMS_PRIMARY_SERIES, {
+      labels: BMS_PRIMARY_LABELS,
+      graphless: BMS_PRIMARY_GRAPHLESS,
+      suffixKeys: { bms_temp_maxvalue: 'bms_temp_maxid' },
+    });
+    buildMetricGrid('motorGrid', MOTOR_EXTRA_SERIES, 'val-');
+    buildMetricGrid('bmsGrid', BMS_EXTRA_SERIES, 'val-');
+
+    function text(id, value, digits = 0) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      const n = Number(value || 0);
+      node.textContent = Number.isFinite(n) ? n.toFixed(digits) : String(value || 0);
+    }
+
+    function setOnline(online) {
+      document.getElementById('statusChip').classList.toggle('online', online);
+      document.getElementById('status').textContent = online ? 'online' : 'polling';
+    }
+
+    function pushHistory(id, value) {
+      const now = Date.now();
+      const n = Number(value);
+      if (!Number.isFinite(n)) return;
+      const list = histories.get(id) || [];
+      list.push({ t: now, v: n });
+      const cutoff = now - WINDOW_MS;
+      while (list.length && list[0].t < cutoff) list.shift();
+      histories.set(id, list);
+    }
+
+    function rgba(hex, a) {
+      const raw = hex.replace('#', '');
+      const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+      const num = parseInt(full, 16);
+      return 'rgba(' + ((num >> 16) & 255) + ',' + ((num >> 8) & 255) + ',' + (num & 255) + ',' + a + ')';
+    }
+
+    function drawChart(canvas, series) {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const box = canvas.parentElement;
+      const rect = box ? box.getBoundingClientRect() : canvas.getBoundingClientRect();
+      const w = Math.max(60, Math.floor(rect.width || 120));
+      const h = Math.max(40, Math.floor(rect.height || 72));
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const bw = Math.max(1, Math.floor(w * dpr));
+      const bh = Math.max(1, Math.floor(h * dpr));
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const list = histories.get(series.id) || [];
+      ctx.clearRect(0, 0, w, h);
+
+      const px = 6, py = 8, pw = w - px * 2, ph = h - py * 2;
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 2; i++) {
+        const y = py + (ph / 2) * i;
+        ctx.beginPath();
+        ctx.moveTo(px, y);
+        ctx.lineTo(w - px, y);
+        ctx.stroke();
+      }
+
+      if (list.length < 2) return;
+
+      const now = Date.now();
+      const start = now - WINDOW_MS;
+      let min = Infinity, max = -Infinity;
+      for (const p of list) { min = Math.min(min, p.v); max = Math.max(max, p.v); }
+      if (min === max) { min -= 1; max += 1; }
+      const pad = (max - min) * 0.1;
+      min -= pad; max += pad;
+
+      const pts = list.map((p) => ({
+        x: px + ((p.t - start) / WINDOW_MS) * pw,
+        y: py + ph - ((p.v - min) / (max - min)) * ph,
+      }));
+
+      const grad = ctx.createLinearGradient(0, py, 0, py + ph);
+      grad.addColorStop(0, rgba(series.color, 0.32));
+      grad.addColorStop(1, rgba(series.color, 0));
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, py + ph);
+      pts.forEach((p) => ctx.lineTo(p.x, p.y));
+      ctx.lineTo(pts[pts.length - 1].x, py + ph);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.strokeStyle = series.color;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+      ctx.stroke();
+
+      const last = pts[pts.length - 1];
+      ctx.fillStyle = series.color;
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function redrawCharts() {
+      GRAPH_SERIES.forEach((s) => {
+        const c = document.getElementById('canvas-' + s.id);
+        if (c) drawChart(c, s);
+      });
+    }
+
+    function redrawActiveCharts() {
+      if (!activeGraphCategory) return;
+      redrawCharts();
+    }
+
+    function updateGraphs(snapshot) {
+      GRAPH_SERIES.forEach((s) => {
+        pushHistory(s.id, snapshot[s.key]);
+      });
+      if (activeGraphCategory) {
+        redrawCharts();
+      }
+    }
+
+    function setGraphDrawerOpen(open, category) {
+      const drawer = document.getElementById('graphDrawer');
+      const backdrop = document.getElementById('graphBackdrop');
+      if (!drawer || !backdrop) return;
+
+      if (open && category) {
+        activeGraphCategory = category;
+        document.getElementById('graphDrawerTitle').textContent = CATEGORY_LABELS[category] || '그래프';
+        document.querySelectorAll('.graph-panel').forEach((panel) => {
+          panel.classList.toggle('active', panel.dataset.category === category);
+        });
+        document.querySelectorAll('.category-btn').forEach((btn) => {
+          btn.classList.toggle('active', btn.dataset.category === category);
+        });
+        drawer.classList.add('open');
+        backdrop.classList.add('open');
+        drawer.setAttribute('aria-hidden', 'false');
+        requestAnimationFrame(() => requestAnimationFrame(redrawCharts));
+      } else {
+        activeGraphCategory = '';
+        drawer.classList.remove('open');
+        backdrop.classList.remove('open');
+        drawer.setAttribute('aria-hidden', 'true');
+        document.querySelectorAll('.category-btn').forEach((btn) => btn.classList.remove('active'));
+        document.querySelectorAll('.graph-panel').forEach((panel) => panel.classList.remove('active'));
+      }
+    }
+
+    document.querySelectorAll('.category-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const category = btn.dataset.category;
+        if (!category) return;
+        if (activeGraphCategory === category && document.getElementById('graphDrawer').classList.contains('open')) {
+          setGraphDrawerOpen(false);
+          return;
+        }
+        setGraphDrawerOpen(true, category);
+      });
+    });
+    document.getElementById('closeGraphDrawer').addEventListener('click', () => setGraphDrawerOpen(false));
+    document.getElementById('graphBackdrop').addEventListener('click', () => setGraphDrawerOpen(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && activeGraphCategory) setGraphDrawerOpen(false);
+    });
+
+    function setCameraOverlayVisible(visible, text) {
+      const overlay = document.getElementById('cameraOverlay');
+      if (!overlay) return;
+      overlay.classList.toggle('visible', Boolean(visible));
+      if (typeof text === 'string') overlay.textContent = text;
+    }
+
+    function clearCameraRetry() {
+      if (!cameraRetryTimer) return;
+      clearTimeout(cameraRetryTimer);
+      cameraRetryTimer = null;
+    }
+
+    function scheduleCameraReconnect() {
+      if (cameraRetryTimer) return;
+      cameraRetryTimer = setTimeout(() => {
+        cameraRetryTimer = null;
+        connectCameraStream(true);
+      }, 2000);
+    }
+
+    function markCameraLive() {
+      const img = document.getElementById('cameraPreview');
+      if (img) img.classList.remove('waiting');
+      setCameraOverlayVisible(false);
+      clearCameraRetry();
+    }
+
+    function connectCameraStream(isRetry) {
+      const img = document.getElementById('cameraPreview');
+      if (!img) return;
+      if (!isRetry) {
+        img.classList.add('waiting');
+        setCameraOverlayVisible(true, 'Stream Waiting');
+      } else {
+        setCameraOverlayVisible(true, 'Reconnecting');
+      }
+      img.src = CAMERA_STREAM_BASE + '?_=' + Date.now();
+    }
+
+    function startCameraStream() {
+      const img = document.getElementById('cameraPreview');
+      if (!img) return;
+      img.addEventListener('load', markCameraLive);
+      img.addEventListener('error', () => {
+        setCameraOverlayVisible(true, 'Reconnecting');
+        scheduleCameraReconnect();
+      });
+      connectCameraStream(false);
+    }
+
+    async function refreshSnapshot() {
+      try {
+        const [snapshot, stats, offset] = await Promise.all([
+          fetch('/api/live/snapshot', { cache: 'no-store' }).then((r) => r.json()),
+          fetch('/api/stats', { cache: 'no-store' }).then((r) => r.json()),
+          fetch('/api/offset/status', { cache: 'no-store' }).then((r) => r.json()),
+        ]);
+        if (typeof window.renderOffsetStatus === 'function') {
+          window.renderOffsetStatus(offset);
+        }
+        const online = stats.hz_5s_avg > 0;
+        setOnline(online);
+        text('hz5', stats.hz_5s_avg, 1);
+        text('speed', snapshot.speed, 0);
+        text('accelValue', snapshot.accel_value, 0);
+        text('brakeValue', snapshot.brake_value, 0);
+        text('steeringAngle', snapshot.steering_angle, 0);
+        text('steeringSpeed', snapshot.steering_speed, 0);
+        text('coreTemp', snapshot.core_temp, 1);
+        text('accelX', snapshot.accel_x, 1);
+        text('accelY', snapshot.accel_y, 1);
+        text('accelZ', snapshot.accel_z, 1);
+        text('linearFl', snapshot.linear_fl, 1);
+        text('linearFr', snapshot.linear_fr, 1);
+        text('linearRl', snapshot.linear_rl, 1);
+        text('linearRr', snapshot.linear_rr, 1);
+        text('rpmLeft', snapshot.rpm_left, 0);
+        text('rpmRight', snapshot.rpm_right, 0);
+        text('bmsCharge', snapshot.bms_charge, 1);
+        text('bmsVoltage', snapshot.bms_voltage, 1);
+        text('bmsCurrent', snapshot.bms_current, 2);
+        text('bmsDcl', snapshot.bms_dcl, 1);
+        SENSOR_SERIES.forEach((m) => text('val-' + m.id, snapshot[m.key], m.digits));
+        MOTOR_EXTRA_SERIES.forEach((m) => text('val-' + m.id, snapshot[m.key], m.digits));
+        BMS_EXTRA_SERIES.forEach((m) => text('val-' + m.id, snapshot[m.key], m.digits));
+        updatePrimaryMetrics(MOTOR_PRIMARY_SERIES, snapshot, {});
+        updatePrimaryMetrics(BMS_PRIMARY_SERIES, snapshot, {
+          suffixKeys: { bms_temp_maxvalue: 'bms_temp_maxid' },
+        });
+        renderStatusRow('bmsStatusRow', snapshot.bms_status_items);
+        renderStatusRow('motorStatusRow', snapshot.motor_status_items);
+        const vsmNode = document.getElementById('motorVsmState');
+        if (vsmNode) vsmNode.textContent = snapshot.vsm_state || 'N/A';
+        const invNode = document.getElementById('motorInvState');
+        if (invNode) invNode.textContent = snapshot.inv_state || 'N/A';
+        updateGraphs(snapshot);
+      } catch (err) {
+        setOnline(false);
+        document.getElementById('status').textContent = 'error';
+      } finally {
+        setTimeout(refreshSnapshot, 200);
+      }
+    }
+
+    startCameraStream();
+    refreshSnapshot();
+    window.addEventListener('resize', redrawActiveCharts);
+    requestAnimationFrame(() => requestAnimationFrame(redrawCharts));
+  </script>
+</body>
+</html>

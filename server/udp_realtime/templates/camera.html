@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>Camera HUD</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg0: #05080f;
+      --bg1: #0a101c;
+      --surface: rgba(16, 24, 40, 0.82);
+      --surface2: rgba(10, 16, 28, 0.92);
+      --line: rgba(120, 160, 220, 0.18);
+      --line-strong: rgba(120, 160, 220, 0.28);
+      --text: #eef4ff;
+      --muted: #8ba3c7;
+      --accent: #5cc8ff;
+      --ok: #34d399;
+      --bad: #f87171;
+      --radius: 12px;
+      --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg0);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    .stage {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+    }
+    .stream-host {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    #streamImage {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+      pointer-events: none;
+      -webkit-user-drag: none;
+      user-select: none;
+    }
+    #streamImage.stream-waiting {
+      opacity: 0;
+    }
+    #streamOverlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #d7deea;
+      font-size: clamp(28px, 4vw, 52px);
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      background: rgba(0, 0, 0, 0.55);
+      pointer-events: none;
+    }
+    .mobile-summary {
+      display: none;
+    }
+    .hud-rail {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      bottom: 12px;
+      width: min(190px, 24vw);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 4;
+      overflow: hidden;
+      scrollbar-width: none;
+    }
+    .hud-rail::-webkit-scrollbar { display: none; }
+    .pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface2);
+      backdrop-filter: blur(8px);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      font-size: 12px;
+      box-shadow: var(--shadow);
+    }
+    .pill .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--bad);
+      flex: 0 0 10px;
+      box-shadow: 0 0 8px var(--bad);
+    }
+    .pill.ok .dot {
+      background: var(--ok);
+      box-shadow: 0 0 8px var(--ok);
+    }
+    .hud-bottom {
+      position: absolute;
+      left: 0;
+      right: min(210px, 26vw);
+      bottom: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px 14px;
+      pointer-events: none;
+      z-index: 4;
+    }
+    .hud-accel { min-width: 250px; }
+    #accelCanvas {
+      display: block;
+      width: 250px;
+      height: 250px;
+      background: transparent;
+    }
+    .hud-accel-text {
+      margin-top: 4px;
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1.35;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    }
+    .hud-speed { flex: 1; display: flex; justify-content: center; min-width: 280px; }
+    #speedometer { display: block; width: min(360px, 42vw); height: auto; background: transparent; }
+    .controls {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      max-width: calc(100% - 220px);
+    }
+    .controls .server-nav a,
+    .controls .server-nav__logout-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .controls button, .controls a {
+      min-height: 38px;
+      padding: 0 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--surface2);
+      color: #dce8ff;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      font-size: 0.82rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .controls button:hover:not(:disabled), .controls a:hover {
+      border-color: rgba(92, 200, 255, 0.5);
+      background: rgba(30, 58, 95, 0.65);
+    }
+    .controls button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .controls button.stop, .controls a.stop {
+      border-color: rgba(248, 113, 113, 0.35);
+      background: rgba(80, 20, 30, 0.45);
+      color: #fecdd3;
+    }
+    #status {
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: var(--surface2);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      max-width: 100%;
+    }
+    #storageChip {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #c8daf8;
+      background: var(--surface2);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    #storageChip.warn {
+      border-color: rgba(251, 191, 36, 0.45);
+      background: rgba(80, 55, 10, 0.45);
+      color: #fde68a;
+    }
+    #storageChip.bad {
+      border-color: rgba(248, 113, 113, 0.45);
+      background: rgba(80, 20, 30, 0.45);
+      color: #fecdd3;
+    }
+    .controls .chip {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #c8daf8;
+      background: var(--surface2);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .controls .chip strong {
+      color: #eef4ff;
+      font-weight: 800;
+    }
+    .recordings-storage {
+      margin: 0;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+      flex-shrink: 0;
+    }
+    .recordings-storage strong {
+      color: #dce8ff;
+      font-weight: 800;
+    }
+    .controls button.active {
+      border-color: rgba(92, 200, 255, 0.65);
+      background: linear-gradient(180deg, rgba(37, 99, 235, 0.35), rgba(20, 50, 90, 0.5));
+      color: #fff;
+    }
+    #toggleFiles { position: relative; }
+    #recordingsBadge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 18px;
+      text-align: center;
+      display: none;
+    }
+    #recordingsBadge.show { display: inline-block; }
+    .recordings-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.62);
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .recordings-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .recordings-panel {
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: min(460px, 94vw);
+      z-index: 31;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, rgba(16, 24, 40, 0.98) 0%, rgba(5, 8, 15, 0.99) 100%);
+      border-right: 1px solid var(--line-strong);
+      box-shadow: 8px 0 40px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(16px);
+      transform: translateX(-105%);
+      transition: transform 0.24s ease;
+    }
+    .recordings-panel.open { transform: translateX(0); }
+    .recordings-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .recordings-header h2 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 800;
+      flex: 1;
+      letter-spacing: -0.01em;
+    }
+    .recordings-count {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .recordings-close {
+      min-height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--surface2);
+      color: #dce8ff;
+      font-weight: 700;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .recordings-body {
+      flex: 1;
+      overflow: auto;
+      padding: 14px 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .recordings-empty {
+      margin: 24px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .file-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(0, 0, 0, 0.25);
+      padding: 14px 16px;
+      display: grid;
+      gap: 10px;
+      transition: border-color 0.15s;
+    }
+    .file-card:hover { border-color: var(--line-strong); }
+    .file-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: #eef4ff;
+      word-break: break-all;
+      line-height: 1.35;
+    }
+    .file-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .file-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(37, 99, 235, 0.2);
+      border: 1px solid rgba(92, 200, 255, 0.3);
+      color: #93c5fd;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 10px;
+    }
+    .file-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .file-actions a,
+    .file-actions button {
+      min-height: 36px;
+      padding: 0 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: var(--surface2);
+      color: #dce8ff;
+      font-weight: 700;
+      font-size: 0.82rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+    .file-actions button.stop {
+      border-color: rgba(248, 113, 113, 0.35);
+      background: rgba(80, 20, 30, 0.45);
+      color: #fecdd3;
+    }
+    @media (max-width: 900px) and (min-width: 769px) {
+      .hud-bottom { flex-direction: column; align-items: flex-start; padding-bottom: 220px; }
+      .hud-rail { width: 150px; }
+      .hud-accel-text { font-size: 24px; }
+    }
+    @media (max-width: 768px) {
+      html, body {
+        height: auto;
+        min-height: 100%;
+        overflow-x: hidden;
+      }
+      .stage {
+        width: 100%;
+        height: auto;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        overflow: visible;
+        background:
+          radial-gradient(ellipse 80% 50% at 10% -10%, rgba(37, 99, 235, 0.12), transparent 55%),
+          linear-gradient(180deg, var(--bg1) 0%, var(--bg0) 100%);
+      }
+      .controls {
+        position: sticky;
+        top: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-width: 100%;
+        padding: 10px 12px;
+        background: rgba(5, 8, 15, 0.95);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--line);
+        z-index: 10;
+        order: 1;
+      }
+      .controls .server-nav {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        width: 100%;
+      }
+      .controls .server-nav a,
+      .controls .server-nav__logout-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 40px;
+        padding: 0 8px;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+      .stream-host {
+        position: relative;
+        inset: auto;
+        width: 100%;
+        flex: 0 0 auto;
+        aspect-ratio: 16 / 10;
+        min-height: 220px;
+        max-height: 48vh;
+        order: 2;
+        background: #000;
+      }
+      #streamImage {
+        object-fit: contain;
+      }
+      #streamOverlay {
+        font-size: 14px;
+        letter-spacing: 0.06em;
+        padding: 0 12px;
+        text-align: center;
+      }
+      .mobile-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px 12px 0;
+        order: 3;
+      }
+      .mobile-summary .stat {
+        padding: 10px 8px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface2);
+        text-align: center;
+      }
+      .mobile-summary .stat-label {
+        color: var(--muted);
+        font-size: 11px;
+        margin-bottom: 4px;
+      }
+      .mobile-summary .stat-value {
+        font-size: 20px;
+        font-weight: 800;
+        line-height: 1.1;
+      }
+      .hud-rail {
+        position: relative;
+        top: auto;
+        right: auto;
+        bottom: auto;
+        width: 100%;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 6px;
+        padding: 10px 12px 16px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        order: 4;
+      }
+      .pill {
+        flex: 0 0 auto;
+        font-size: 11px;
+        padding: 6px 8px;
+        letter-spacing: 0.04em;
+      }
+      .pill .dot {
+        width: 10px;
+        height: 10px;
+        flex-basis: 10px;
+      }
+      .hud-bottom {
+        display: none;
+      }
+    }
+  </style>
+  {% include "partials/mobile_compact.html" %}
+</head>
+<body class="camera-page">
+  <div class="stage">
+    <div class="controls">
+      {% include "partials/server_nav.html" %}
+      <button id="startButton" class="desktop-only" type="button">HUD 녹화</button>
+      <button id="stopButton" class="stop desktop-only" type="button" disabled>HUD 중지</button>
+      <button id="toggleFiles" class="desktop-only" type="button">녹화 목록<span id="recordingsBadge"></span></button>
+      <span id="storageChip" class="desktop-only">저장공간 확인 중...</span>
+      <span class="chip offset-chip desktop-only" id="offsetChip"><span>오프셋</span> <strong id="offsetStatus">없음</strong></span>
+      <span id="status" class="desktop-only">로딩 중</span>
+    </div>
+
+    {% include "partials/offset_status.html" %}
+
+    <div class="stream-host">
+      <img id="streamImage" alt="" draggable="false" decoding="async" class="stream-waiting">
+      <div id="streamOverlay">STREAM WAITING</div>
+    </div>
+
+    <div class="mobile-summary" aria-label="주요 수치">
+      <div class="stat">
+        <div class="stat-label">속도</div>
+        <div class="stat-value"><span id="mobileSpeed">0</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">가속 X/Y</div>
+        <div class="stat-value"><span id="mobileAccel">0.0 / 0.0</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">ECU</div>
+        <div class="stat-value"><span id="mobileTemp">0.0</span>°C</div>
+      </div>
+    </div>
+
+    <aside class="hud-rail" aria-label="vehicle status">
+      <div class="pill" id="pill-lv"><span class="dot"></span><span>LV</span></div>
+      <div class="pill" id="pill-hv"><span class="dot"></span><span>HV</span></div>
+      <div class="pill" id="pill-rtd"><span class="dot"></span><span>RTD</span></div>
+      <div class="pill" id="pill-err"><span class="dot"></span><span>ERR</span></div>
+      <div class="pill" id="pill-sd"><span class="dot"></span><span>SD</span></div>
+      <div class="pill" id="pill-telemetry"><span class="dot"></span><span>TELEMETRY</span></div>
+      <div class="pill" id="pill-can"><span class="dot"></span><span>CAN</span></div>
+      <div class="pill" id="pill-imd"><span class="dot"></span><span>IMD</span></div>
+      <div class="pill" id="pill-bms"><span class="dot"></span><span>BMS</span></div>
+      <div class="pill" id="pill-bspd"><span class="dot"></span><span>BSPD</span></div>
+    </aside>
+
+    <div class="hud-bottom">
+      <div class="hud-accel">
+        <canvas id="accelCanvas" width="250" height="250"></canvas>
+        <div class="hud-accel-text">
+          <div>x <span id="accelX">0.0</span> g</div>
+          <div>y <span id="accelY">0.0</span> g</div>
+          <div>ECU temp: <span id="coreTemp">0.0</span> C</div>
+        </div>
+      </div>
+      <div class="hud-speed">
+        <canvas id="speedometer" width="360" height="180"></canvas>
+      </div>
+    </div>
+
+    <div class="recordings-backdrop desktop-only" id="recordingsBackdrop"></div>
+    <aside class="recordings-panel desktop-only" id="recordingsPanel" aria-hidden="true">
+      <div class="recordings-header">
+        <h2>녹화 목록</h2>
+        <span class="recordings-count" id="recordingsCount">0개</span>
+        <button type="button" class="recordings-close" id="closeRecordings">닫기</button>
+      </div>
+      <p class="recordings-storage" id="recordingsStorage">서버 저장공간 확인 중...</p>
+      <div class="recordings-body" id="recordings">
+        <div class="recordings-empty">저장된 녹화본이 없습니다.</div>
+      </div>
+    </aside>
+    <canvas id="hudRecordCanvas" width="1280" height="720" hidden aria-hidden="true"></canvas>
+  </div>
+
+  <script>
+    const TELEMETRY_POLL_MS = {{ telemetry_poll_ms }};
+    const HUD_UI_VERSION = '2026-07-07-jpeg-poll';
+    const mobileView = window.matchMedia('(max-width: 768px)');
+    let polling = false;
+    let displayedSpeed = 0;
+    let targetSpeed = 0;
+    let lastStreamAt = 0;
+    let cameraFrameTimer = null;
+    let cameraFrameBusy = false;
+    let accelX = 0;
+    let accelY = 0;
+    const HUD_RECORD_WIDTH = 1280;
+    const HUD_RECORD_HEIGHT = 720;
+    const HUD_RECORD_FPS = 24;
+    let hudRecordTimer = null;
+    let hudFrameUploading = false;
+
+    function isMobileView() {
+      return mobileView.matches;
+    }
+
+    function setStreamOverlayVisible(visible) {
+      document.getElementById('streamOverlay').style.display = visible ? 'flex' : 'none';
+    }
+
+    function markStreamLive() {
+      lastStreamAt = Date.now();
+      document.getElementById('streamImage').classList.remove('stream-waiting');
+      setStreamOverlayVisible(false);
+    }
+
+    function markStreamWaiting() {
+      document.getElementById('streamImage').classList.add('stream-waiting');
+      setStreamOverlayVisible(true);
+    }
+
+    async function pollCameraFrame() {
+      if (cameraFrameBusy) return;
+      cameraFrameBusy = true;
+      const img = document.getElementById('streamImage');
+      try {
+        const res = await fetch('/api/camera/latest.jpg?_=' + Date.now(), { cache: 'no-store' });
+        if (res.ok && res.status !== 204) {
+          const blob = await res.blob();
+          if (blob.size > 0) {
+            const nextUrl = URL.createObjectURL(blob);
+            const prevUrl = img.dataset.blobUrl || '';
+            img.src = nextUrl;
+            img.dataset.blobUrl = nextUrl;
+            if (prevUrl) URL.revokeObjectURL(prevUrl);
+            markStreamLive();
+          }
+        }
+      } catch (err) {
+      } finally {
+        cameraFrameBusy = false;
+      }
+      if (!lastStreamAt || Date.now() - lastStreamAt > 3000) {
+        markStreamWaiting();
+      }
+    }
+
+    function startCameraFeed() {
+      if (cameraFrameTimer) clearInterval(cameraFrameTimer);
+      const img = document.getElementById('streamImage');
+      if (img.src && !img.dataset.blobUrl) {
+        img.removeAttribute('src');
+      }
+      markStreamWaiting();
+      pollCameraFrame();
+      const intervalMs = isMobileView() ? 350 : 200;
+      cameraFrameTimer = setInterval(pollCameraFrame, intervalMs);
+    }
+
+    function stopCameraFeed() {
+      if (cameraFrameTimer) {
+        clearInterval(cameraFrameTimer);
+        cameraFrameTimer = null;
+      }
+      const img = document.getElementById('streamImage');
+      const blobUrl = img.dataset.blobUrl || '';
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        delete img.dataset.blobUrl;
+      }
+      if (img.src) img.removeAttribute('src');
+    }
+
+    function configureStreamMode() {
+      stopCameraFeed();
+      startCameraFeed();
+    }
+
+    function setStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function setPill(id, ok) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('ok', Boolean(ok));
+    }
+
+    function formatMb(size) {
+      return (Number(size || 0) / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    function formatGb(bytes) {
+      const size = Number(bytes || 0);
+      if (size >= 1024 * 1024 * 1024) return (size / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+      return formatMb(size);
+    }
+
+    function updateStorageDisplay(data) {
+      const chip = document.getElementById('storageChip');
+      const panel = document.getElementById('recordingsStorage');
+      const disk = data.disk || {};
+      const freeBytes = Number(disk.free_bytes || 0);
+      const totalBytes = Number(disk.total_bytes || 0);
+      const usedBytes = Number(data.storage_bytes || 0);
+      const maxBytes = Number(data.max_storage_bytes || 0);
+      const diskOk = data.disk_ok !== false;
+      const freePct = totalBytes > 0 ? Math.round((freeBytes / totalBytes) * 100) : 0;
+      const chipText = '여유 ' + formatGb(freeBytes) + ' · 녹화 ' + formatMb(usedBytes) +
+        (maxBytes > 0 ? '/' + formatMb(maxBytes) : '');
+      const panelText = '서버 여유 <strong>' + formatGb(freeBytes) + '</strong> (' + freePct + '%) · ' +
+        '녹화 사용 <strong>' + formatMb(usedBytes) + '</strong>' +
+        (maxBytes > 0 ? ' / 최대 ' + formatMb(maxBytes) : '');
+
+      if (chip) {
+        chip.textContent = chipText;
+        chip.classList.remove('warn', 'bad');
+        if (!diskOk) chip.classList.add('bad');
+        else if (freePct < 20) chip.classList.add('warn');
+      }
+      if (panel) {
+        panel.innerHTML = panelText + (diskOk ? '' : ' · <strong style="color:#fecdd3">디스크 부족 — 녹화 불가</strong>');
+      }
+    }
+
+    async function postJson(url, payload) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {}),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!data.message && !res.ok) data.message = 'HTTP ' + res.status;
+      return { ok: res.ok, data };
+    }
+
+    let recordingsOpen = false;
+    let latestFiles = [];
+
+    function formatDate(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      const p = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+        ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+
+    function setRecordingsOpen(open) {
+      recordingsOpen = open;
+      document.getElementById('recordingsBackdrop').classList.toggle('open', open);
+      document.getElementById('recordingsPanel').classList.toggle('open', open);
+      document.getElementById('recordingsPanel').setAttribute('aria-hidden', open ? 'false' : 'true');
+      document.getElementById('toggleFiles').classList.toggle('active', open);
+    }
+
+    function updateRecordingsBadge(files) {
+      const badge = document.getElementById('recordingsBadge');
+      const count = (files || []).length;
+      document.getElementById('recordingsCount').textContent = count + '개';
+      if (count > 0) {
+        badge.textContent = String(count);
+        badge.classList.add('show');
+      } else {
+        badge.textContent = '';
+        badge.classList.remove('show');
+      }
+    }
+
+    function renderRecordings(files) {
+      latestFiles = files || [];
+      updateRecordingsBadge(latestFiles);
+      const box = document.getElementById('recordings');
+      if (!latestFiles.length) {
+        box.innerHTML = '<div class="recordings-empty">저장된 녹화본이 없습니다.<br>녹화 중지 후 여기에 표시됩니다.</div>';
+        return;
+      }
+      box.innerHTML = latestFiles.map((f) => {
+        const ext = (f.format || (f.name || '').split('.').pop() || 'file').toUpperCase();
+        return (
+          '<article class="file-card">' +
+            '<div class="file-name" title="' + f.name + '">' + f.name + '</div>' +
+            '<div class="file-meta">' +
+              '<span class="file-badge">' + ext + '</span>' +
+              '<span>' + formatMb(f.size) + '</span>' +
+              '<span>' + formatDate(f.updated_at) + '</span>' +
+            '</div>' +
+            '<div class="file-actions">' +
+              (f.playable ? '<a href="' + f.play_url + '" target="_blank" rel="noreferrer">재생</a>' : '') +
+              '<a href="' + f.download_url + '" target="_blank" rel="noreferrer">다운로드</a>' +
+              '<button type="button" class="stop" data-delete-name="' + f.name + '">삭제</button>' +
+            '</div>' +
+          '</article>'
+        );
+      }).join('');
+      box.querySelectorAll('[data-delete-name]').forEach((button) => {
+        button.onclick = () => deleteRecording(button.dataset.deleteName);
+      });
+    }
+
+    async function deleteRecording(name) {
+      try {
+        const res = await fetch('/api/recordings/' + encodeURIComponent(name), { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.message || '삭제 실패');
+        setStatus(name + ' 삭제됨');
+        renderRecordings(data.recent_files || []);
+      } catch (err) {
+        setStatus('삭제 실패: ' + (err.message || err));
+      }
+    }
+
+    async function refreshStatus() {
+      try {
+        const [res, offsetRes] = await Promise.all([
+          fetch('/api/recording/status', { cache: 'no-store' }),
+          fetch('/api/offset/status', { cache: 'no-store' }),
+        ]);
+        const data = await res.json();
+        const offset = await offsetRes.json();
+        if (typeof window.renderOffsetStatus === 'function') {
+          window.renderOffsetStatus(offset);
+        }
+        const active = Boolean(data.active);
+        const diskOk = data.disk_ok !== false;
+        const ffmpegReady = data.ffmpeg_available !== false || data.record_format !== 'mp4';
+        updateStorageDisplay(data);
+        document.getElementById('startButton').disabled = active || !diskOk || !ffmpegReady;
+        document.getElementById('stopButton').disabled = !active;
+        if (active) {
+          const label = data.capture_source === 'hud' ? 'HUD 녹화 중' : '녹화 중';
+          setStatus(label + ' ' + (data.filename || '') + ' / ' + formatMb(data.bytes_written));
+        } else if (!diskOk) {
+          const freeMb = Math.floor(Number((data.disk || {}).free_bytes || 0) / 1024 / 1024);
+          setStatus('디스크 부족 — 여유 ' + freeMb + 'MB (최소 64MB 필요)');
+        } else if (!ffmpegReady) {
+          setStatus('MP4 준비 안 됨 — install_ffmpeg.sh 실행 필요');
+        } else if (!polling) {
+          setStatus('대기 중 · HUD 전체 화면 · ' + (data.record_format || 'mp4').toUpperCase());
+        } else {
+          setStatus('대기 중 · 카메라 연결됨');
+        }
+        renderRecordings(data.recent_files || []);
+      } catch (err) {
+        setStatus('상태 조회 실패: ' + (err.message || err));
+      }
+    }
+
+    function hudStageMetrics() {
+      const stage = document.querySelector('.stage');
+      const canvas = document.getElementById('hudRecordCanvas');
+      const rect = stage.getBoundingClientRect();
+      canvas.width = HUD_RECORD_WIDTH;
+      canvas.height = HUD_RECORD_HEIGHT;
+      return {
+        stage,
+        canvas,
+        rect,
+        scaleX: canvas.width / Math.max(rect.width, 1),
+        scaleY: canvas.height / Math.max(rect.height, 1),
+      };
+    }
+
+    function hudMapRect(stageRect, scaleX, scaleY, el) {
+      const r = el.getBoundingClientRect();
+      return {
+        x: (r.left - stageRect.left) * scaleX,
+        y: (r.top - stageRect.top) * scaleY,
+        w: r.width * scaleX,
+        h: r.height * scaleY,
+      };
+    }
+
+    function hudDrawImageCover(ctx, img, x, y, w, h) {
+      if (!img || !img.naturalWidth || !img.naturalHeight) return false;
+      const ir = img.naturalWidth / img.naturalHeight;
+      const dr = w / h;
+      let sw;
+      let sh;
+      let sx;
+      let sy;
+      if (ir > dr) {
+        sh = img.naturalHeight;
+        sw = sh * dr;
+        sx = (img.naturalWidth - sw) / 2;
+        sy = 0;
+      } else {
+        sw = img.naturalWidth;
+        sh = sw / dr;
+        sx = 0;
+        sy = (img.naturalHeight - sh) / 2;
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+      return true;
+    }
+
+    function hudRoundRect(ctx, x, y, w, h, radius) {
+      const r = Math.min(radius, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function hudDrawPill(ctx, pill, stageRect, scaleX, scaleY) {
+      const box = hudMapRect(stageRect, scaleX, scaleY, pill);
+      const ok = pill.classList.contains('ok');
+      const label = pill.querySelector('span:last-child');
+      const text = label ? label.textContent.trim() : '';
+      const dotSize = Math.max(6, 10 * scaleX);
+
+      ctx.save();
+      hudRoundRect(ctx, box.x, box.y, box.w, box.h, 12 * scaleX);
+      ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(120, 160, 220, 0.28)';
+      ctx.lineWidth = Math.max(1, 1.2 * scaleX);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(box.x + 16 * scaleX, box.y + box.h / 2, dotSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = ok ? '#34d399' : '#f87171';
+      ctx.fill();
+
+      ctx.fillStyle = '#eef4ff';
+      ctx.font = '700 ' + Math.max(10, 12 * scaleY) + 'px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, box.x + 28 * scaleX, box.y + box.h / 2);
+      ctx.restore();
+    }
+
+    function hudDrawAccelText(ctx, stageRect, scaleX, scaleY) {
+      const textBox = document.querySelector('.hud-accel-text');
+      if (!textBox) return;
+      const box = hudMapRect(stageRect, scaleX, scaleY, textBox);
+      const lines = [
+        'x ' + document.getElementById('accelX').textContent + ' g',
+        'y ' + document.getElementById('accelY').textContent + ' g',
+        'ECU temp: ' + document.getElementById('coreTemp').textContent + ' C',
+      ];
+      const fontSize = Math.max(18, 34 * scaleY);
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 ' + fontSize + 'px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = 8 * scaleY;
+      lines.forEach((line, index) => {
+        ctx.fillText(line, box.x, box.y + index * fontSize * 1.35);
+      });
+      ctx.restore();
+    }
+
+    function captureHudFrame() {
+      const { canvas, rect, scaleX, scaleY } = hudStageMetrics();
+      const ctx = canvas.getContext('2d');
+      const streamImg = document.getElementById('streamImage');
+      const overlay = document.getElementById('streamOverlay');
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const host = document.querySelector('.stream-host');
+      const hostBox = hudMapRect(rect, scaleX, scaleY, host);
+      const drewStream = hudDrawImageCover(ctx, streamImg, hostBox.x, hostBox.y, hostBox.w, hostBox.h);
+      if (!drewStream || streamImg.classList.contains('stream-waiting')) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.fillRect(hostBox.x, hostBox.y, hostBox.w, hostBox.h);
+        ctx.fillStyle = '#d7deea';
+        ctx.font = '800 ' + Math.max(24, hostBox.h * 0.06) + 'px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText((overlay && overlay.textContent) || 'STREAM WAITING', hostBox.x + hostBox.w / 2, hostBox.y + hostBox.h / 2);
+      }
+
+      const speedCanvas = document.getElementById('speedometer');
+      const speedBox = hudMapRect(rect, scaleX, scaleY, speedCanvas);
+      ctx.drawImage(speedCanvas, speedBox.x, speedBox.y, speedBox.w, speedBox.h);
+
+      const accelCanvas = document.getElementById('accelCanvas');
+      const accelBox = hudMapRect(rect, scaleX, scaleY, accelCanvas);
+      ctx.drawImage(accelCanvas, accelBox.x, accelBox.y, accelBox.w, accelBox.h);
+      hudDrawAccelText(ctx, rect, scaleX, scaleY);
+
+      document.querySelectorAll('.hud-rail .pill').forEach((pill) => {
+        hudDrawPill(ctx, pill, rect, scaleX, scaleY);
+      });
+
+      return canvas;
+    }
+
+    async function uploadHudFrame(blob) {
+      if (!blob || hudFrameUploading) return;
+      hudFrameUploading = true;
+      try {
+        await fetch('/api/recording/frame', {
+          method: 'POST',
+          body: blob,
+          headers: { 'Content-Type': 'image/jpeg' },
+        });
+      } catch (err) {
+      } finally {
+        hudFrameUploading = false;
+      }
+    }
+
+    function pushHudFrame() {
+      const canvas = captureHudFrame();
+      canvas.toBlob((blob) => {
+        if (blob) uploadHudFrame(blob);
+      }, 'image/jpeg', 0.86);
+    }
+
+    function startHudCaptureLoop() {
+      stopHudCaptureLoop();
+      pushHudFrame();
+      hudRecordTimer = setInterval(pushHudFrame, Math.round(1000 / HUD_RECORD_FPS));
+    }
+
+    function stopHudCaptureLoop() {
+      if (hudRecordTimer) {
+        clearInterval(hudRecordTimer);
+        hudRecordTimer = null;
+      }
+      hudFrameUploading = false;
+    }
+
+    document.getElementById('startButton').onclick = async () => {
+      if (isMobileView()) {
+        setStatus('HUD 녹화는 데스크톱 화면에서만 가능합니다.');
+        return;
+      }
+      setStatus('HUD 녹화 시작 요청 중...');
+      document.getElementById('startButton').disabled = true;
+      const { ok, data } = await postJson('/api/recording/start', {
+        capture: 'hud',
+        width: HUD_RECORD_WIDTH,
+        height: HUD_RECORD_HEIGHT,
+        fps: HUD_RECORD_FPS,
+      });
+      if (!ok || !data.ok) {
+        document.getElementById('startButton').disabled = false;
+        setStatus('녹화 시작 실패: ' + (data.message || '알 수 없는 오류'));
+        return;
+      }
+      setStatus('HUD 녹화 시작: ' + (data.filename || ''));
+      startHudCaptureLoop();
+      await refreshStatus();
+    };
+
+    document.getElementById('stopButton').onclick = async () => {
+      setStatus('HUD 녹화 중지 요청 중...');
+      document.getElementById('stopButton').disabled = true;
+      stopHudCaptureLoop();
+      const { ok, data } = await postJson('/api/recording/stop');
+      if (!ok || !data.ok) {
+        setStatus('녹화 중지 실패: ' + (data.message || '진행 중인 녹화 없음'));
+      } else {
+        const rec = data.recording || {};
+        setStatus('녹화 완료 ' + (rec.filename || '') + ' / ' + (rec.frames_written || 0) + ' frames · HUD 포함');
+        setRecordingsOpen(true);
+      }
+      await refreshStatus();
+    };
+
+    document.getElementById('toggleFiles').onclick = () => {
+      setRecordingsOpen(!recordingsOpen);
+    };
+    document.getElementById('closeRecordings').onclick = () => setRecordingsOpen(false);
+    document.getElementById('recordingsBackdrop').onclick = () => setRecordingsOpen(false);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && recordingsOpen) setRecordingsOpen(false);
+    });
+
+    function drawSpeedometer(speed) {
+      const canvas = document.getElementById('speedometer');
+      const ctx = canvas.getContext('2d');
+      const centerX = canvas.width / 2;
+      const radius = canvas.width / 2 - 10;
+      const centerY = canvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, Math.PI, 2 * Math.PI);
+      ctx.lineWidth = 20;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.stroke();
+
+      ctx.font = '14px Arial';
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (let i = 0; i <= 120; i += 10) {
+        const angle = (i / 120) * Math.PI + Math.PI;
+        const x1 = centerX + (radius - 10) * Math.cos(angle);
+        const y1 = centerY + (radius - 10) * Math.sin(angle);
+        const x2 = centerX + radius * Math.cos(angle);
+        const y2 = centerY + radius * Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'white';
+        ctx.stroke();
+        const textX = centerX + (radius - 30) * Math.cos(angle);
+        const textY = centerY + (radius - 30) * Math.sin(angle);
+        ctx.fillText(String(i), textX, textY);
+      }
+
+      const clamped = Math.min(Math.max(speed, 0), 120);
+      const speedAngle = (clamped / 120) * Math.PI + Math.PI;
+      const pinX = centerX + (radius - 40) * Math.cos(speedAngle);
+      const pinY = centerY + (radius - 40) * Math.sin(speedAngle);
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(pinX, pinY);
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#ff0000';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, Math.PI, speedAngle, false);
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = 'rgba(169, 223, 216, 0.4)';
+      ctx.stroke();
+      ctx.font = 'bold 48px Arial';
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(Math.round(clamped)), centerX, centerY - 20);
+      ctx.font = '20px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText('km/h', centerX + 30, centerY - 20);
+    }
+
+    function drawAccel() {
+      const canvas = document.getElementById('accelCanvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const maxG = 2.5;
+      const scaleX = (width / 2) / maxG;
+      const scaleY = (height / 2) / maxG;
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 0.5;
+      for (let i = -maxG; i <= maxG; i++) {
+        const x = width / 2 + i * scaleX;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+        const y = height / 2 - i * scaleY;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'gray';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, height / 2);
+      ctx.lineTo(width, height / 2);
+      ctx.moveTo(width / 2, 0);
+      ctx.lineTo(width / 2, height);
+      ctx.stroke();
+      const dotX = width / 2 + accelX * scaleX;
+      const dotY = height / 2 - accelY * scaleY;
+      ctx.fillStyle = 'red';
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function animateSpeed() {
+      const diff = targetSpeed - displayedSpeed;
+      if (Math.abs(diff) > 0.1) {
+        displayedSpeed += diff * 0.15;
+      } else {
+        displayedSpeed = targetSpeed;
+      }
+      drawSpeedometer(displayedSpeed);
+      requestAnimationFrame(animateSpeed);
+    }
+
+    function applyTelemetry(snapshot) {
+      const fresh = Boolean(snapshot && snapshot.ok !== false && snapshot.updated_at);
+      let ageMs = 999999;
+      if (fresh) {
+        const t = Date.parse(snapshot.updated_at);
+        if (!Number.isNaN(t)) ageMs = Date.now() - t;
+      }
+      const live = ageMs < 3000;
+
+      const flags = snapshot.system || {};
+      setPill('pill-lv', flags.lv ?? live);
+      setPill('pill-hv', flags.hv ?? live);
+      setPill('pill-rtd', flags.rtd ?? live);
+      setPill('pill-err', flags.err === undefined ? !live : !flags.err);
+      setPill('pill-sd', flags.sd ?? live);
+      setPill('pill-telemetry', flags.telemetry ?? live);
+      setPill('pill-can', flags.can ?? live);
+      setPill('pill-imd', flags.imd ?? live);
+      setPill('pill-bms', flags.bms ?? live);
+      setPill('pill-bspd', flags.bspd ?? live);
+
+      targetSpeed = Number(snapshot.speed || 0);
+      accelX = Number(snapshot.accel_x || 0);
+      accelY = Number(snapshot.accel_y || 0);
+      document.getElementById('accelX').textContent = accelX.toFixed(1);
+      document.getElementById('accelY').textContent = accelY.toFixed(1);
+      document.getElementById('coreTemp').textContent = Number(snapshot.core_temp || 0).toFixed(1);
+      const mobileSpeed = document.getElementById('mobileSpeed');
+      const mobileAccel = document.getElementById('mobileAccel');
+      const mobileTemp = document.getElementById('mobileTemp');
+      if (mobileSpeed) mobileSpeed.textContent = String(Math.round(targetSpeed));
+      if (mobileAccel) mobileAccel.textContent = accelX.toFixed(1) + ' / ' + accelY.toFixed(1);
+      if (mobileTemp) mobileTemp.textContent = Number(snapshot.core_temp || 0).toFixed(1);
+      drawAccel();
+    }
+
+    async function pollTelemetry() {
+      try {
+        const snapshot = await fetch('/api/telemetry/snapshot', { cache: 'no-store' }).then((r) => r.json());
+        applyTelemetry(snapshot);
+      } catch (err) {
+        applyTelemetry({ ok: false });
+      }
+    }
+
+    drawAccel();
+    animateSpeed();
+    configureStreamMode();
+    mobileView.addEventListener('change', configureStreamMode);
+    refreshStatus();
+    pollTelemetry();
+    setInterval(() => { polling = true; refreshStatus(); }, 2000);
+    setInterval(pollTelemetry, TELEMETRY_POLL_MS);
+  </script>
+</body>
+</html>

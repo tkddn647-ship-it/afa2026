@@ -4,13 +4,16 @@ import gzip
 import json
 import os
 import random
+import re
 import secrets
+import shutil
 import urllib.error
 import urllib.request
+import zipfile
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from time import monotonic, monotonic_ns, time
+from time import monotonic, time
 from typing import Any
 
 
@@ -31,21 +34,44 @@ def _load_env_file(filename: str = "env.ingest") -> None:
 
 _load_env_file()
 
+import sys
+
+_ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
+
 import websockets
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.templating import Jinja2Templates
 
+from offset_shared import (
+    apply_offsets_to_parsed,
+    extract_offset_candidates,
+    raw_value_to_offset,
+    snapshot_to_offsets,
+)
+from afa_auth import install_auth
+from nav_config import nav_context
+
+SAMPLE_TIMES_MAXLEN = int(os.getenv("SAMPLE_TIMES_MAXLEN", "2000"))
+LIVE_TASK_MAX = int(os.getenv("LIVE_TASK_MAX", "64"))
+DEVICE_CACHE_MAX = int(os.getenv("DEVICE_CACHE_MAX", "32"))
+COMPLETED_DOWNLOADS_MAX = int(os.getenv("COMPLETED_DOWNLOADS_MAX", "8"))
+LOG_ENQUEUE_BATCH_SIZE = int(os.getenv("LOG_ENQUEUE_BATCH_SIZE", "32"))
+AFA_WS_MAX_SIZE = int(os.getenv("AFA_WS_MAX_SIZE", str(1 << 20)))
+
 app = FastAPI()
+install_auth(app)
 BASE_DIR = Path(__file__).resolve().parent
 LOG_DIR = Path(os.getenv("LOG_DIR", str(BASE_DIR / "logs")))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 ws_clients: set[WebSocket] = set()
-sample_times: deque[float] = deque(maxlen=20000)
+sample_times: deque[float] = deque(maxlen=max(100, SAMPLE_TIMES_MAXLEN))
 sample_times_by_platform: dict[str, deque[float]] = {
-    "esp32": deque(maxlen=20000),
-    "raspberry_pi": deque(maxlen=20000),
+    "esp32": deque(maxlen=max(100, SAMPLE_TIMES_MAXLEN)),
+    "raspberry_pi": deque(maxlen=max(100, SAMPLE_TIMES_MAXLEN)),
 }
 total_packets = 0
 total_samples = 0
@@ -61,10 +87,11 @@ wheel_config: dict[str, int | float] = {
 }
 wheel_last_sample_ms_by_device: dict[str, float] = {}
 live_tasks: set[asyncio.Task[Any]] = set()
+live_tasks_dropped = 0
 DEVICE_ONLINE_WINDOW_MS = 10000
 MONITOR_FORWARD_URL = os.getenv("MONITOR_FORWARD_URL", os.getenv("FORWARD_URL", "")).strip()
 FORWARD_TIMEOUT_SEC = float(os.getenv("FORWARD_TIMEOUT_SEC", "2.0"))
-FORWARD_QUEUE_MAX = int(os.getenv("FORWARD_QUEUE_MAX", "2000"))
+FORWARD_QUEUE_MAX = int(os.getenv("FORWARD_QUEUE_MAX", "200"))
 FORWARD_HEADER = "X-UDP-Logger-Forwarded"
 AFA_SOCKET_URL = os.getenv(
     "AFA_SOCKET_URL",
@@ -79,12 +106,17 @@ UDP_BIND_HOST = os.getenv("UDP_BIND_HOST", "0.0.0.0").strip() or "0.0.0.0"
 UDP_BIND_PORT = int(os.getenv("UDP_BIND_PORT", "9999"))
 TCP_BIND_HOST = os.getenv("TCP_BIND_HOST", "0.0.0.0").strip() or "0.0.0.0"
 TCP_BIND_PORT = int(os.getenv("TCP_BIND_PORT", str(UDP_BIND_PORT)))
-LOG_QUEUE_MAX_ROWS = int(os.getenv("LOG_QUEUE_MAX_ROWS", "50000"))
+LOG_QUEUE_MAX_ROWS = int(os.getenv("LOG_QUEUE_MAX_ROWS", "1000"))
 LOG_FLUSH_INTERVAL_SEC = float(os.getenv("LOG_FLUSH_INTERVAL_SEC", "1.0"))
+LOG_FLUSH_ROW_BATCH = int(os.getenv("LOG_FLUSH_ROW_BATCH", "100"))
+LOG_ROLL_SECONDS = int(os.getenv("LOG_ROLL_SECONDS", "0"))
+LOG_ROLL_SIZE_BYTES = int(os.getenv("LOG_ROLL_SIZE_BYTES", "0"))
+LOG_FSYNC_INTERVAL_SEC = float(os.getenv("LOG_FSYNC_INTERVAL_SEC", "0"))
 LOG_DOWNLOAD_GZIP = os.getenv("LOG_DOWNLOAD_GZIP", "1").strip().lower() in {"1", "true", "yes", "on"}
 LOG_GZIP_LEVEL = int(os.getenv("LOG_GZIP_LEVEL", "6"))
 LOG_DELETE_AFTER_DOWNLOAD = os.getenv("LOG_DELETE_AFTER_DOWNLOAD", "1").strip().lower() in {"1", "true", "yes", "on"}
 LOG_MAX_DIR_BYTES = int(os.getenv("LOG_MAX_DIR_BYTES", str(512 * 1024 * 1024)))
+LOG_MIN_FREE_BYTES = int(os.getenv("LOG_MIN_FREE_BYTES", str(64 * 1024 * 1024)))
 forward_success_count = 0
 forward_failure_count = 0
 forward_last_error = ""
@@ -99,11 +131,9 @@ latest_sensor_snapshot_by_device: dict[str, dict[str, float]] = {}
 forward_queue: "asyncio.Queue[dict[str, Any]] | None" = None
 LOG_FIELDNAMES = [
     "timestamp",
-    "monotonic_ns",
+    "stm_time_ns",
     "speed",
     "wheel_rpm",
-    "wheel_rpm_right",
-    "wheel_rpm_left",
     "wheel_pulse",
     "wheel_teeth",
     "accelX",
@@ -198,15 +228,44 @@ WHEEL_PULSE_PATHS = {
 }
 
 
-def cleanup_log_dir(max_bytes: int = LOG_MAX_DIR_BYTES) -> list[str]:
+def _disk_usage(path: Path | str) -> dict[str, int]:
+    usage = shutil.disk_usage(Path(path).resolve())
+    return {
+        "total_bytes": usage.total,
+        "used_bytes": usage.used,
+        "free_bytes": usage.free,
+    }
+
+
+def _disk_free_ok(path: Path | str, min_free: int = LOG_MIN_FREE_BYTES) -> tuple[bool, dict[str, int]]:
+    stats = _disk_usage(path)
+    return stats["free_bytes"] >= min_free, stats
+
+
+def cleanup_log_dir(
+    max_bytes: int = LOG_MAX_DIR_BYTES,
+    *,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    exclude_resolved = exclude or set()
     files = sorted(
         [path for path in LOG_DIR.glob("sensor_log_*") if path.is_file()],
         key=lambda path: path.stat().st_mtime,
     )
-    total = sum(path.stat().st_size for path in files)
     deleted: list[str] = []
+    remaining: list[Path] = []
+    for path in files:
+        if path.stat().st_size == 0 and str(path.resolve()) not in exclude_resolved:
+            path.unlink(missing_ok=True)
+            deleted.append(path.name)
+            continue
+        remaining.append(path)
+    files = remaining
+    total = sum(path.stat().st_size for path in files)
     while total > max_bytes and files:
         victim = files.pop(0)
+        if str(victim.resolve()) in exclude_resolved:
+            continue
         size = victim.stat().st_size
         victim.unlink(missing_ok=True)
         total -= size
@@ -221,6 +280,70 @@ def _delete_log_file(path_str: str) -> None:
         pass
 
 
+def _gzip_is_valid(path: Path) -> bool:
+    if not path.is_file() or not path.name.endswith(".gz"):
+        return path.is_file()
+    try:
+        with gzip.open(path, "rb") as handle:
+            while handle.read(1024 * 1024):
+                pass
+        return True
+    except Exception:
+        return False
+
+
+def _gzip_csv_file(csv_path: Path) -> Path:
+    gz_path = Path(f"{csv_path}.gz")
+    with csv_path.open("rb") as src, gzip.open(
+        gz_path,
+        "wb",
+        compresslevel=max(1, min(9, LOG_GZIP_LEVEL)),
+    ) as dst:
+        shutil.copyfileobj(src, dst)
+    csv_path.unlink(missing_ok=True)
+    return gz_path
+
+
+def _salvage_truncated_gzip(src: Path) -> Path | None:
+    if not src.is_file() or not src.name.endswith(".gz"):
+        return None
+    dst = Path(str(src)[:-3])
+    lines_written = 0
+    try:
+        with gzip.open(src, "rt", encoding="utf-8", newline="") as src_file, dst.open(
+            "w", encoding="utf-8", newline=""
+        ) as dst_file:
+            for line in src_file:
+                dst_file.write(line)
+                lines_written += 1
+    except Exception:
+        pass
+    if lines_written < 1 or not dst.is_file():
+        dst.unlink(missing_ok=True)
+        return None
+    return dst
+
+
+def _delete_download_payload(payload: dict[str, Any]) -> None:
+    _delete_log_file(str(payload.get("file_path", "")))
+    part_files = payload.get("part_files")
+    if not isinstance(part_files, list):
+        return
+    for part in part_files:
+        if isinstance(part, dict):
+            _delete_log_file(str(part.get("file_path", "")))
+
+
+def _store_completed_download(download_token: str, download_payload: dict[str, Any]) -> None:
+    completed_downloads[download_token] = {
+        **download_payload,
+        "stopped_at": datetime.now(timezone.utc).isoformat(),
+    }
+    while len(completed_downloads) > max(1, COMPLETED_DOWNLOADS_MAX):
+        old_token, _old_payload = next(iter(completed_downloads.items()))
+        completed_downloads.pop(old_token, None)
+
+
 def _completed_sessions_public() -> list[dict[str, Any]]:
     sessions: list[dict[str, Any]] = []
     for token, payload in completed_downloads.items():
@@ -232,6 +355,8 @@ def _completed_sessions_public() -> list[dict[str, Any]]:
                 "filename": payload.get("filename", ""),
                 "download_bytes": payload.get("download_bytes", 0),
                 "compressed": bool(payload.get("compressed", LOG_DOWNLOAD_GZIP)),
+                "part_count": int(payload.get("part_count", 1) or 1),
+                "is_archive": bool(payload.get("is_archive", False)),
                 "stopped_at": payload.get("stopped_at", ""),
                 "download_url": f"/api/logging/download/{token}",
             }
@@ -240,12 +365,180 @@ def _completed_sessions_public() -> list[dict[str, Any]]:
     return sessions
 
 
+def _registered_log_paths() -> set[str]:
+    registered: set[str] = set()
+    for payload in completed_downloads.values():
+        if not isinstance(payload, dict):
+            continue
+        file_path = str(payload.get("file_path", "")).strip()
+        if file_path:
+            registered.add(file_path)
+        part_files = payload.get("part_files")
+        if isinstance(part_files, list):
+            for part in part_files:
+                if isinstance(part, dict):
+                    part_path = str(part.get("file_path", "")).strip()
+                    if part_path:
+                        registered.add(part_path)
+    return registered
+
+
+def _active_log_paths() -> set[str]:
+    if logging_session is None:
+        return set()
+    active: set[str] = set()
+    for filename in logging_session.all_filenames():
+        if filename:
+            active.add(str((LOG_DIR / filename).resolve()))
+    current = logging_session.file_path
+    if current is not None:
+        active.add(str(current.resolve()))
+    return active
+
+
+def _build_zip_archive_paths(paths: list[Path], zip_name: str) -> Path:
+    zip_path = LOG_DIR / zip_name
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in paths:
+            if path.is_file():
+                archive.write(path, arcname=path.name)
+    return zip_path
+
+
+def _part_payload(path: Path) -> dict[str, Any]:
+    compressed = path.name.endswith(".gz")
+    return {
+        "filename": path.name,
+        "file_path": str(path),
+        "compressed": compressed,
+        "download_bytes": path.stat().st_size,
+    }
+
+
+def _prepare_recovered_log_path(path: Path) -> Path | None:
+    if path.name.endswith(".gz") and not _gzip_is_valid(path):
+        salvaged = _salvage_truncated_gzip(path)
+        if salvaged is not None:
+            print(f"[logging] salvaged truncated gzip: {path.name} -> {salvaged.name}")
+            path.unlink(missing_ok=True)
+            return salvaged
+        print(f"[logging] skipped corrupt gzip: {path.name}")
+        return None
+    return path
+
+
+def _recover_orphan_log_files() -> int:
+    if not LOG_DIR.is_dir():
+        return 0
+
+    registered_paths = _registered_log_paths()
+    active_paths = _active_log_paths()
+    groups: dict[str, list[Path]] = {}
+    recovered = 0
+
+    for path in sorted(LOG_DIR.iterdir()):
+        if not path.is_file() or not path.name.startswith("sensor_log_"):
+            continue
+        resolved = str(path.resolve())
+        if resolved in registered_paths or resolved in active_paths:
+            continue
+
+        if path.suffix == ".zip":
+            token = secrets.token_urlsafe(16)
+            stopped_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat()
+            _store_completed_download(
+                token,
+                {
+                    "filename": path.name,
+                    "file_path": resolved,
+                    "compressed": False,
+                    "download_bytes": path.stat().st_size,
+                    "part_count": 1,
+                    "part_files": [{"filename": path.name, "file_path": resolved}],
+                    "is_archive": True,
+                },
+            )
+            completed_downloads[token]["stopped_at"] = stopped_at
+            recovered += 1
+            registered_paths.add(resolved)
+            continue
+
+        match = re.match(r"sensor_log_(\d{8}_\d{6})", path.name)
+        session_key = match.group(1) if match else path.stem
+        groups.setdefault(session_key, []).append(path)
+
+    for session_key, paths in groups.items():
+        paths = sorted(paths, key=lambda item: item.name)
+        if not paths:
+            continue
+        if any(str(path.resolve()) in registered_paths for path in paths):
+            continue
+
+        token = secrets.token_urlsafe(16)
+        stopped_at = datetime.fromtimestamp(
+            max(path.stat().st_mtime for path in paths),
+            tz=timezone.utc,
+        ).isoformat()
+
+        registered_now: list[Path] = []
+        if len(paths) == 1:
+            ready_path = _prepare_recovered_log_path(paths[0])
+            if ready_path is None:
+                continue
+            registered_now = [ready_path]
+            part = _part_payload(ready_path)
+            payload = {
+                **part,
+                "part_count": 1,
+                "part_files": [part],
+                "is_archive": False,
+            }
+        else:
+            ready_paths = []
+            seen_paths: set[str] = set()
+            for path in paths:
+                ready_path = _prepare_recovered_log_path(path)
+                if ready_path is None:
+                    continue
+                resolved = str(ready_path.resolve())
+                if resolved in seen_paths:
+                    continue
+                seen_paths.add(resolved)
+                ready_paths.append(ready_path)
+            if not ready_paths:
+                continue
+            registered_now = ready_paths
+            zip_name = f"sensor_log_{session_key}.zip"
+            zip_path = LOG_DIR / zip_name
+            if not zip_path.is_file():
+                _build_zip_archive_paths(ready_paths, zip_name)
+            payload = {
+                "filename": zip_name,
+                "file_path": str(zip_path.resolve()),
+                "compressed": False,
+                "download_bytes": zip_path.stat().st_size,
+                "part_count": len(ready_paths),
+                "part_files": [{"filename": zip_name, "file_path": str(zip_path.resolve())}],
+                "is_archive": True,
+            }
+            registered_paths.add(str(zip_path.resolve()))
+
+        _store_completed_download(token, payload)
+        completed_downloads[token]["stopped_at"] = stopped_at
+        recovered += 1
+        for path in registered_now:
+            registered_paths.add(str(path.resolve()))
+
+    return recovered
+
+
 class CsvLogSession:
     def __init__(self, *, started_epoch_ms: int) -> None:
         self.started_epoch_ms = started_epoch_ms
         self.started_at = datetime.now(timezone.utc)
         self.session_id = self.started_at.strftime("%Y%m%d_%H%M%S")
         self.queue: asyncio.Queue[list[dict[str, Any]]] = asyncio.Queue(maxsize=max(1, LOG_QUEUE_MAX_ROWS))
+        self.pending_rows: list[dict[str, Any]] = []
         self.stop_requested = False
         self.writer_task: asyncio.Task[None] | None = None
         self.file_handle: Any = None
@@ -253,57 +546,172 @@ class CsvLogSession:
         self.rows_written = 0
         self.rows_enqueued = 0
         self.dropped_rows = 0
+        self.current_part_rows_written = 0
+        self.part_number = 0
+        self.part_files: list[dict[str, Any]] = []
+        self.current_part_opened_at = 0.0
+        self.last_fsync_at = 0.0
         self.last_error = ""
         self.closed = False
-        self.download_filename = (
-            f"sensor_log_{self.session_id}.csv.gz"
-            if LOG_DOWNLOAD_GZIP
-            else f"sensor_log_{self.session_id}.csv"
-        )
-        self.file_path = LOG_DIR / self.download_filename
+        self.download_filename = ""
+        self.file_path = LOG_DIR / f"sensor_log_{self.session_id}.csv"
+
+    def _file_extension(self) -> str:
+        return ".csv"
+
+    def _build_part_filename(self, part_number: int) -> str:
+        suffix = self._file_extension()
+        if self._rolling_enabled():
+            return f"sensor_log_{self.session_id}_part{part_number:03d}{suffix}"
+        return f"sensor_log_{self.session_id}{suffix}"
+
+    def _rolling_enabled(self) -> bool:
+        return LOG_ROLL_SECONDS > 0 or LOG_ROLL_SIZE_BYTES > 0
 
     def _open_output_file(self) -> None:
+        self.part_number += 1
+        self.download_filename = self._build_part_filename(self.part_number)
+        self.file_path = LOG_DIR / self.download_filename
+        self.current_part_rows_written = 0
+        self.current_part_opened_at = monotonic()
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        if LOG_DOWNLOAD_GZIP:
-            self.file_handle = gzip.open(
-                self.file_path,
-                "wt",
-                encoding="utf-8",
-                newline="",
-                compresslevel=max(1, min(9, LOG_GZIP_LEVEL)),
-            )
-        else:
-            self.file_handle = self.file_path.open("w", encoding="utf-8", newline="")
+        self.file_handle = self.file_path.open("w", encoding="utf-8", newline="")
         self.writer = csv.DictWriter(self.file_handle, fieldnames=LOG_FIELDNAMES)
         self.writer.writeheader()
 
     def _close_output_file(self) -> None:
         if self.file_handle is not None:
+            self.file_handle.flush()
             self.file_handle.close()
             self.file_handle = None
         self.writer = None
+
+    def _prepare_part_for_download(self, csv_path: Path) -> Path:
+        if not LOG_DOWNLOAD_GZIP:
+            return csv_path
+        if not csv_path.is_file():
+            return csv_path
+        gz_path = _gzip_csv_file(csv_path)
+        self.download_filename = gz_path.name
+        self.file_path = gz_path
+        return gz_path
+
+    def _current_part_payload(self) -> dict[str, Any]:
+        compressed = self.file_path.name.endswith(".gz")
+        return {
+            "filename": self.download_filename,
+            "file_path": str(self.file_path),
+            "compressed": compressed,
+            "download_bytes": self.file_bytes(),
+            "rows_written": self.current_part_rows_written,
+        }
+
+    def _finalize_current_part(self) -> None:
+        if self.current_part_rows_written < 1 or not self.file_path.is_file():
+            self._close_output_file()
+            return
+        csv_path = self.file_path
+        self._close_output_file()
+        self.file_path = csv_path
+        self._prepare_part_for_download(csv_path)
+        self.part_files.append(self._current_part_payload())
+
+    def _should_roll_by_time(self) -> bool:
+        if LOG_ROLL_SECONDS <= 0 or self.current_part_rows_written < 1:
+            return False
+        return monotonic() - self.current_part_opened_at >= LOG_ROLL_SECONDS
+
+    def _should_roll_by_size(self) -> bool:
+        if LOG_ROLL_SIZE_BYTES <= 0 or self.current_part_rows_written < 1:
+            return False
+        return self.file_bytes() >= LOG_ROLL_SIZE_BYTES
+
+    def _roll_part(self) -> None:
+        if not self._rolling_enabled():
+            return
+        self._flush_pending(force=True)
+        if self.current_part_rows_written < 1:
+            self.current_part_opened_at = monotonic()
+            return
+        self._finalize_current_part()
+        self._open_output_file()
+
+    def _maybe_fsync(self) -> None:
+        if LOG_FSYNC_INTERVAL_SEC <= 0 or self.file_handle is None:
+            return
+        now = monotonic()
+        if now - self.last_fsync_at < LOG_FSYNC_INTERVAL_SEC:
+            return
+        fileno = getattr(self.file_handle, "fileno", None)
+        if callable(fileno):
+            try:
+                os.fsync(fileno())
+                self.last_fsync_at = now
+            except OSError:
+                pass
+
+    def _flush_pending(self, *, force: bool = False) -> None:
+        if not self.pending_rows or self.writer is None:
+            return
+
+        batch_size = max(1, LOG_FLUSH_ROW_BATCH)
+        while self.pending_rows:
+            if not force and len(self.pending_rows) < batch_size:
+                break
+            chunk_size = len(self.pending_rows) if force else min(batch_size, len(self.pending_rows))
+            chunk = self.pending_rows[:chunk_size]
+            del self.pending_rows[:chunk_size]
+            self.writer.writerows(chunk)
+            self.rows_written += len(chunk)
+            self.current_part_rows_written += len(chunk)
+            if self.file_handle is not None:
+                self.file_handle.flush()
+            self._maybe_fsync()
+            if self._should_roll_by_size():
+                self._roll_part()
+                if self.writer is None:
+                    break
 
     def file_bytes(self) -> int:
         if not self.file_path.is_file():
             return 0
         return self.file_path.stat().st_size
 
+    def total_file_bytes(self) -> int:
+        total = sum(int(part.get("download_bytes", 0) or 0) for part in self.part_files)
+        if self.current_part_rows_written > 0:
+            total += self.file_bytes()
+        return total
+
+    def all_filenames(self) -> list[str]:
+        names = [str(part.get("filename", "")) for part in self.part_files if part.get("filename")]
+        if self.current_part_rows_written > 0 and self.download_filename:
+            names.append(self.download_filename)
+        return names
+
     def start(self) -> None:
         self.writer_task = asyncio.create_task(self._writer_loop())
 
     def status(self) -> dict[str, Any]:
+        file_count = len(self.part_files)
+        if self.current_part_rows_written > 0:
+            file_count += 1
         return {
             "session_id": self.session_id,
             "output_dir": str(LOG_DIR),
-            "active_file": self.download_filename if self.rows_written > 0 else "",
-            "files": [self.download_filename] if self.rows_written > 0 else [],
+            "active_file": self.download_filename if self.current_part_rows_written > 0 else "",
+            "files": self.all_filenames(),
             "rows_written": self.rows_written,
             "rows_enqueued": self.rows_enqueued,
-            "rows_pending": self.queue.qsize(),
+            "rows_pending": self.queue.qsize() + len(self.pending_rows),
             "dropped_rows": self.dropped_rows,
-            "file_count": 1 if self.rows_written > 0 else 0,
-            "file_bytes": self.file_bytes(),
+            "file_count": file_count,
+            "part_number": self.part_number,
+            "file_bytes": self.total_file_bytes(),
             "compressed": LOG_DOWNLOAD_GZIP,
+            "rolling_enabled": self._rolling_enabled(),
+            "roll_seconds": LOG_ROLL_SECONDS,
+            "roll_size_bytes": LOG_ROLL_SIZE_BYTES,
             "last_error": self.last_error,
             "closed": self.closed,
         }
@@ -311,12 +719,16 @@ class CsvLogSession:
     def enqueue_rows(self, rows: list[dict[str, Any]]) -> None:
         if self.stop_requested or self.closed or not rows:
             return
-        try:
-            self.queue.put_nowait(rows)
-            self.rows_enqueued += len(rows)
-        except asyncio.QueueFull:
-            self.dropped_rows += len(rows)
-            self.last_error = "log writer queue is full"
+        batch_size = max(1, LOG_ENQUEUE_BATCH_SIZE)
+        for start in range(0, len(rows), batch_size):
+            chunk = rows[start : start + batch_size]
+            try:
+                self.queue.put_nowait(chunk)
+                self.rows_enqueued += len(chunk)
+            except asyncio.QueueFull:
+                self.dropped_rows += len(chunk)
+                self.last_error = "log writer queue is full"
+                return
 
     def request_stop(self) -> None:
         self.stop_requested = True
@@ -331,47 +743,98 @@ class CsvLogSession:
         try:
             self._open_output_file()
             while True:
-                if self.stop_requested and self.queue.empty():
+                if self.stop_requested and self.queue.empty() and not self.pending_rows:
                     break
 
                 timeout = max(0.1, LOG_FLUSH_INTERVAL_SEC)
                 try:
                     rows = await asyncio.wait_for(self.queue.get(), timeout=timeout)
+                    self.pending_rows.extend(rows)
                 except asyncio.TimeoutError:
-                    continue
+                    pass
 
-                assert self.writer is not None
-                self.writer.writerows(rows)
-                self.rows_written += len(rows)
-                if self.file_handle is not None:
-                    self.file_handle.flush()
+                self._flush_pending()
+                if self._should_roll_by_time():
+                    self._roll_part()
         except Exception as exc:
             self.last_error = str(exc)
             raise
         finally:
-            self._close_output_file()
+            self._flush_pending(force=True)
+            if self.current_part_rows_written > 0:
+                self._finalize_current_part()
+            else:
+                self._close_output_file()
             self.closed = True
 
+    def _collect_all_parts(self) -> list[dict[str, Any]]:
+        return list(self.part_files)
+
+    def _build_zip_archive(self, parts: list[dict[str, Any]]) -> Path:
+        zip_name = f"sensor_log_{self.session_id}.zip"
+        zip_path = LOG_DIR / zip_name
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for part in parts:
+                part_path = Path(str(part.get("file_path", "")))
+                if part_path.is_file():
+                    archive.write(part_path, arcname=str(part.get("filename", part_path.name)))
+        return zip_path
+
     def build_download_response(self) -> Response:
-        if self.rows_written < 1 or not self.file_path.is_file():
+        payload = self.build_download_payload()
+        file_path = Path(str(payload.get("file_path", "")))
+        if self.rows_written < 1 or not file_path.is_file():
             return Response(
                 content=json.dumps({"ok": False, "message": "저장된 파일이 없습니다."}, ensure_ascii=False),
                 media_type="application/json",
                 status_code=200,
             )
+        media_type = "application/zip" if payload.get("is_archive") else (
+            "application/gzip" if payload.get("compressed") else "text/csv; charset=utf-8"
+        )
         return FileResponse(
-            path=self.file_path,
-            media_type="application/gzip" if LOG_DOWNLOAD_GZIP else "text/csv; charset=utf-8",
-            filename=self.download_filename,
-            headers={"X-Download-Bytes": str(self.file_bytes())},
+            path=file_path,
+            media_type=media_type,
+            filename=str(payload.get("filename", file_path.name)),
+            headers={"X-Download-Bytes": str(payload.get("download_bytes", file_path.stat().st_size))},
         )
 
     def build_download_payload(self) -> dict[str, Any]:
+        parts = self._collect_all_parts()
+        if not parts:
+            return {
+                "filename": "",
+                "file_path": "",
+                "compressed": LOG_DOWNLOAD_GZIP,
+                "download_bytes": 0,
+                "part_count": 0,
+                "part_files": [],
+                "is_archive": False,
+            }
+
+        if len(parts) == 1:
+            part = parts[0]
+            return {
+                "filename": part["filename"],
+                "file_path": part["file_path"],
+                "compressed": bool(part.get("compressed", LOG_DOWNLOAD_GZIP)),
+                "download_bytes": int(part.get("download_bytes", 0) or 0),
+                "part_count": 1,
+                "part_files": parts,
+                "is_archive": False,
+            }
+
+        zip_path = self._build_zip_archive(parts)
+        for part in parts:
+            _delete_log_file(str(part.get("file_path", "")))
         return {
-            "filename": self.download_filename,
-            "file_path": str(self.file_path),
-            "compressed": LOG_DOWNLOAD_GZIP,
-            "download_bytes": self.file_bytes(),
+            "filename": zip_path.name,
+            "file_path": str(zip_path),
+            "compressed": False,
+            "download_bytes": zip_path.stat().st_size,
+            "part_count": len(parts),
+            "part_files": [{"filename": zip_path.name, "file_path": str(zip_path)}],
+            "is_archive": True,
         }
 
 
@@ -383,9 +846,6 @@ def record_traffic(sample_count: int = 1) -> None:
     total_samples += safe_count
     for _ in range(safe_count):
         sample_times.append(now)
-    cutoff = now - 5.0
-    while sample_times and sample_times[0] < cutoff:
-        sample_times.popleft()
 
 
 def hz_last(window_sec: float = 1.0) -> float:
@@ -469,8 +929,40 @@ def _device_key_from_payload(payload: dict[str, Any]) -> str:
     return f"{payload.get('ip', 'unknown')}:{payload.get('port', 0)}"
 
 
+def _prune_device_caches() -> None:
+    max_keys = max(8, DEVICE_CACHE_MAX)
+    stores = (
+        device_last_seen_epoch_ms,
+        latest_sensor_snapshot_by_device,
+        device_offsets,
+        last_sample_ms_by_device,
+        sample_index_by_device,
+        wheel_last_sample_ms_by_device,
+    )
+    for store in stores:
+        overflow = len(store) - max_keys
+        if overflow <= 0:
+            continue
+        for key in list(store.keys())[:overflow]:
+            store.pop(key, None)
+
+
+def _slim_forward_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "time": payload.get("time", ""),
+        "ip": payload.get("ip", ""),
+        "port": payload.get("port", 0),
+        "transport": payload.get("transport", ""),
+        "message": payload.get("message", ""),
+    }
+
+
 def mark_device_seen(payload: dict[str, Any]) -> None:
     device_last_seen_epoch_ms[_device_key_from_payload(payload)] = int(time() * 1000)
+    if len(device_last_seen_epoch_ms) > DEVICE_CACHE_MAX:
+        online_device_count()
+        if len(device_last_seen_epoch_ms) > DEVICE_CACHE_MAX:
+            _prune_device_caches()
 
 
 def online_device_count() -> int:
@@ -543,6 +1035,32 @@ def _format_recording_timestamp(dt: datetime) -> str:
         f"{dt.second:02d}."
         f"{int(dt.microsecond / 1000):03d}"
     )
+
+
+def _payload_time_to_datetime(payload: dict[str, Any]) -> datetime:
+    raw = payload.get("time")
+    if isinstance(raw, str) and raw:
+        try:
+            parsed = datetime.fromisoformat(raw)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
+def _extract_stm_time_ns(sample: dict[str, Any]) -> int | str:
+    """
+    STM 샘플 시간(t/ts/timestamp_ms)을 ns로 변환.
+    - STM에서 ms 단위로 보낼 때: ms * 1_000_000
+    - 값이 없으면 빈 문자열
+    """
+    for key in ("t", "ts", "timestamp_ms"):
+        sample_ms = _as_int(sample.get(key))
+        if sample_ms is not None:
+            return int(sample_ms) * 1_000_000
+    return ""
 
 
 def _sim_linear_value(base: float, spread: float = 6.0) -> float:
@@ -657,42 +1175,6 @@ def _extract_sensor_updates(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def _extract_offset_candidates_from_parsed(parsed: dict[str, Any]) -> dict[str, float]:
-    snapshot: dict[str, float] = {}
-
-    linear = parsed.get("linear")
-    if isinstance(linear, dict):
-        for key, path in LINEAR_SENSOR_PATHS.items():
-            value = _as_float(linear.get(key))
-            if value is not None:
-                snapshot[path] = value
-
-    for accel_key in ("accel", "accelerometer", "acceleration"):
-        accel = parsed.get(accel_key)
-        if isinstance(accel, dict):
-            for key, path in ACCEL_SENSOR_PATHS.items():
-                value = _as_float(accel.get(key))
-                if value is not None:
-                    snapshot[path] = value
-
-    path = parsed.get("path")
-    path_value = _as_float(parsed.get("value"))
-    if isinstance(path, str) and path_value is not None:
-        snapshot[path] = path_value
-
-    updates = parsed.get("sensor_updates")
-    if isinstance(updates, list):
-        for item in updates:
-            if not isinstance(item, dict):
-                continue
-            update_path = item.get("path")
-            value = _as_float(item.get("value"))
-            if isinstance(update_path, str) and value is not None:
-                snapshot[update_path] = value
-
-    return snapshot
-
-
 def update_latest_sensor_snapshot(payload: dict[str, Any]) -> None:
     message = payload.get("message", "")
     try:
@@ -703,12 +1185,14 @@ def update_latest_sensor_snapshot(payload: dict[str, Any]) -> None:
     if not isinstance(parsed, dict):
         return
 
-    snapshot = _extract_offset_candidates_from_parsed(parsed)
+    snapshot = extract_offset_candidates(parsed)
     if not snapshot:
         return
 
     device_key = str(parsed.get("device") or parsed.get("d") or _device_key_from_payload(payload))
     latest_sensor_snapshot_by_device[device_key] = snapshot
+    if len(latest_sensor_snapshot_by_device) > DEVICE_CACHE_MAX:
+        _prune_device_caches()
 
 
 def _extract_wheel_pulse_from_sample(sample: dict[str, Any]) -> float | None:
@@ -760,9 +1244,6 @@ def _next_wheel_sample_time_ms(device_key: str, sample_ms: int | None) -> tuple[
 
 
 def _apply_wheel_metrics_to_sample(sample: dict[str, Any], device_key: str, sample_ms: int | None) -> None:
-    if _as_float(sample.get("wheel_rpm_right")) is not None or _as_float(sample.get("wheel_rpm_left")) is not None:
-        return
-
     teeth_count = _wheel_teeth_count()
     if teeth_count < 1:
         return
@@ -771,11 +1252,9 @@ def _apply_wheel_metrics_to_sample(sample: dict[str, Any], device_key: str, samp
     if pulse_count is None:
         return
 
-    existing_rpm = _as_float(sample.get("wheel_rpm"))
-
     previous_ms, current_ms = _next_wheel_sample_time_ms(device_key, sample_ms)
-    wheel_rpm = existing_rpm if existing_rpm is not None else 0.0
-    if existing_rpm is None and previous_ms is not None and current_ms is not None:
+    wheel_rpm = 0.0
+    if previous_ms is not None and current_ms is not None:
         delta_ms = current_ms - previous_ms
         if delta_ms > 0:
             wheel_rpm = (pulse_count / float(teeth_count)) * (60000.0 / delta_ms)
@@ -783,57 +1262,6 @@ def _apply_wheel_metrics_to_sample(sample: dict[str, Any], device_key: str, samp
     sample["wheel_pulse"] = round(pulse_count, 4)
     sample["wheel_teeth"] = teeth_count
     sample["wheel_rpm"] = round(wheel_rpm, 4)
-
-
-def _apply_offsets_to_parsed(parsed: dict[str, Any], offsets: dict[str, float]) -> bool:
-    changed = False
-
-    linear = parsed.get("linear")
-    if isinstance(linear, dict):
-        for key, path in LINEAR_SENSOR_PATHS.items():
-            value = _as_float(linear.get(key))
-            if value is None:
-                continue
-            offset = offsets.get(path)
-            if offset is None:
-                continue
-            linear[key] = round(value - offset, 4)
-            changed = True
-
-    for accel_key in ("accel", "accelerometer", "acceleration"):
-        accel = parsed.get(accel_key)
-        if isinstance(accel, dict):
-            for key, path in ACCEL_SENSOR_PATHS.items():
-                value = _as_float(accel.get(key))
-                if value is None:
-                    continue
-                offset = offsets.get(path)
-                if offset is None:
-                    continue
-                accel[key] = round(value - offset, 4)
-                changed = True
-
-    path = parsed.get("path")
-    value = _as_float(parsed.get("value"))
-    if isinstance(path, str) and value is not None and path in offsets:
-        parsed["value"] = round(value - offsets[path], 4)
-        changed = True
-
-    updates = parsed.get("sensor_updates")
-    if isinstance(updates, list):
-        for item in updates:
-            if not isinstance(item, dict):
-                continue
-            update_path = item.get("path")
-            update_value = _as_float(item.get("value"))
-            if not isinstance(update_path, str) or update_value is None:
-                continue
-            if update_path not in offsets:
-                continue
-            item["value"] = round(update_value - offsets[update_path], 4)
-            changed = True
-
-    return changed
 
 
 def apply_offsets_to_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -851,7 +1279,7 @@ def apply_offsets_to_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if not offsets:
         return payload
 
-    if not _apply_offsets_to_parsed(parsed, offsets):
+    if not apply_offsets_to_parsed(parsed, offsets):
         return payload
 
     return {**payload, "message": json.dumps(parsed, ensure_ascii=False)}
@@ -978,11 +1406,17 @@ def enqueue_forward_payload(payload: dict[str, Any]) -> None:
         forward_last_error = "forward queue is not ready"
         return
 
+    slim = _slim_forward_payload(payload)
     try:
-        queue.put_nowait(payload)
+        queue.put_nowait(slim)
     except asyncio.QueueFull:
-        forward_dropped_count += 1
-        forward_last_error = "forward queue is full"
+        try:
+            queue.get_nowait()
+            queue.put_nowait(slim)
+            forward_dropped_count += 1
+        except (asyncio.QueueEmpty, asyncio.QueueFull):
+            forward_dropped_count += 1
+            forward_last_error = "forward queue is full"
 
 
 async def forward_worker() -> None:
@@ -1042,7 +1476,7 @@ class AFASocketRelay:
         self.ws = await websockets.connect(
             AFA_SOCKET_URL,
             ping_interval=None,
-            max_size=None,
+            max_size=max(4096, AFA_WS_MAX_SIZE),
             open_timeout=5,
         )
 
@@ -1153,8 +1587,6 @@ WIDE_COLUMN_ALIASES = {
     "speed": "speed",
     "velocity": "speed",
     "wheel_rpm": "wheel_rpm",
-    "wheel_rpm_right": "wheel_rpm_right",
-    "wheel_rpm_left": "wheel_rpm_left",
     "wheel_pulse": "wheel_pulse",
     "wheel_teeth": "wheel_teeth",
     "accelx": "accelX",
@@ -1233,15 +1665,12 @@ WIDE_COLUMN_ALIASES = {
 
 
 def _empty_wide_row(payload: dict[str, Any]) -> dict[str, Any]:
-    recv_epoch_ms, recv_utc_ms = _recv_times_ms(payload)
-    dt = datetime.fromtimestamp(recv_epoch_ms / 1000.0, tz=timezone.utc)
+    dt = _payload_time_to_datetime(payload)
     return {
         "timestamp": _format_recording_timestamp(dt),
-        "monotonic_ns": monotonic_ns(),
+        "stm_time_ns": "",
         "speed": 0,
         "wheel_rpm": 0,
-        "wheel_rpm_right": 0,
-        "wheel_rpm_left": 0,
         "wheel_pulse": 0,
         "wheel_teeth": 0,
         "accelX": 0,
@@ -1361,18 +1790,6 @@ def _apply_sensor_map_to_row(row: dict[str, Any], parsed: dict[str, Any]) -> Non
         for key, value in steering.items():
             _set_wide_value(row, f"steering_{key}", value)
 
-    wheel = parsed.get("wheel")
-    if isinstance(wheel, dict):
-        _set_wide_value(row, "wheel_rpm_right", wheel.get("rpm_right"))
-        _set_wide_value(row, "wheel_rpm_left", wheel.get("rpm_left"))
-
-    _set_wide_value(row, "wheel_rpm_right", parsed.get("wheel_rpm_right"))
-    _set_wide_value(row, "wheel_rpm_left", parsed.get("wheel_rpm_left"))
-    if _as_float(parsed.get("wheel_rpm_right")) is not None or _as_float(parsed.get("wheel_rpm_left")) is not None:
-        right_rpm = _as_float(parsed.get("wheel_rpm_right")) or 0.0
-        left_rpm = _as_float(parsed.get("wheel_rpm_left")) or 0.0
-        row["wheel_rpm"] = round((right_rpm + left_rpm) / 2.0, 4)
-
     inverter = parsed.get("inverter")
     if isinstance(inverter, dict):
         temperature = inverter.get("temperature")
@@ -1462,10 +1879,10 @@ def _apply_sensor_map_to_row(row: dict[str, Any], parsed: dict[str, Any]) -> Non
 
 def _row_with_timeline(payload: dict[str, Any], device_key: str) -> dict[str, Any]:
     row = _empty_wide_row(payload)
-    _elapsed_ms, wallclock_epoch_ms, _wallclock_utc_ms, _elapsed_hms_ms = _timeline_wallclock(device_key)
-    wallclock_dt = datetime.fromtimestamp(wallclock_epoch_ms / 1000.0, tz=timezone.utc)
-    row["timestamp"] = _format_recording_timestamp(wallclock_dt)
-    row["monotonic_ns"] = monotonic_ns()
+    # 실제 로깅 시각(서버 수신 시각)을 timestamp에 기록
+    # STM 샘플 시각(t/ts)은 build_log_rows에서 stm_time_ns에 기록
+    row["timestamp"] = _format_recording_timestamp(_payload_time_to_datetime(payload))
+    row["stm_time_ns"] = ""
     return row
 
 
@@ -1486,6 +1903,7 @@ def build_log_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
             for s in samples:
                 if isinstance(s, dict):
                     row = _row_with_timeline(payload, device_key)
+                    row["stm_time_ns"] = _extract_stm_time_ns(s)
                     _apply_sensor_map_to_row(row, s)
                     rows.append(row)
                 else:
@@ -1493,6 +1911,7 @@ def build_log_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
                     rows.append(row)
             return rows
         row = _row_with_timeline(payload, device_key)
+        row["stm_time_ns"] = _extract_stm_time_ns(parsed)
         sample_ms = _as_int(parsed.get("t"))
         _next_timestep(device_key, sample_ms)
         _apply_sensor_map_to_row(row, parsed)
@@ -1517,6 +1936,10 @@ def _discard_live_task(task: asyncio.Task[Any]) -> None:
 
 
 def schedule_live_processing(payload: dict[str, Any], *, skip_forward: bool = False) -> None:
+    global live_tasks_dropped
+    if len(live_tasks) >= LIVE_TASK_MAX:
+        live_tasks_dropped += 1
+        return
     task = asyncio.create_task(process_live_payload(payload, skip_forward=skip_forward))
     live_tasks.add(task)
     task.add_done_callback(_discard_live_task)
@@ -1531,7 +1954,6 @@ class UDPProtocol(asyncio.DatagramProtocol):
             "ip": addr[0],
             "port": addr[1],
             "message": message,
-            "raw_bytes": list(data),
             "transport": "udp",
         }
         mark_device_seen(payload)
@@ -1611,6 +2033,12 @@ async def send_afa_linear_demo() -> dict[str, Any]:
 @app.on_event("startup")
 async def startup_event() -> None:
     global forward_queue
+    deleted = cleanup_log_dir()
+    if deleted:
+        print(f"[logging] startup cleanup removed {len(deleted)} log file(s)")
+    recovered_logs = _recover_orphan_log_files()
+    if recovered_logs:
+        print(f"[logging] recovered {recovered_logs} log file(s) from {LOG_DIR}")
     loop = asyncio.get_running_loop()
     forward_queue = asyncio.Queue(maxsize=max(1, FORWARD_QUEUE_MAX))
     app.state.udp_transport = None
@@ -1675,7 +2103,7 @@ def home(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"request": request},
+        context={"request": request, **nav_context("logger", request)},
     )
 
 
@@ -1698,7 +2126,6 @@ async def ingest_http(request: Request) -> dict[str, Any]:
         "ip": ip,
         "port": port,
         "message": message,
-        "raw_bytes": body if _is_byte_list(body) else None,
         "transport": "http",
     }
     skip_forward = request.headers.get(FORWARD_HEADER) == "1"
@@ -1744,7 +2171,6 @@ async def handle_tcp_client(
                 "ip": ip,
                 "port": port,
                 "message": message,
-                "raw_bytes": list(line.rstrip(b"\r\n")),
                 "transport": "tcp",
             }
             mark_device_seen(payload)
@@ -1786,6 +2212,11 @@ def stats() -> dict[str, Any]:
         "forward_last_sent_at": forward_last_sent_at,
         "forward_queue_max": FORWARD_QUEUE_MAX,
         "forward_queue_size": forward_queue.qsize() if forward_queue is not None else 0,
+        "live_task_max": LIVE_TASK_MAX,
+        "live_tasks_active": len(live_tasks),
+        "live_tasks_dropped": live_tasks_dropped,
+        "log_queue_max_rows": LOG_QUEUE_MAX_ROWS,
+        "device_cache_max": DEVICE_CACHE_MAX,
         "afa_forward_enabled": afa_forward_enabled(),
         "afa_socket_url": AFA_SOCKET_URL,
         "afa_socket_event": AFA_SOCKET_EVENT,
@@ -1840,17 +2271,25 @@ def logging_status() -> dict[str, Any]:
         "rows_pending": session_status.get("rows_pending", 0),
         "dropped_rows": session_status.get("dropped_rows", 0),
         "file_count": session_status.get("file_count", 0),
+        "part_number": session_status.get("part_number", 0),
         "active_file": session_status.get("active_file", ""),
+        "files": session_status.get("files", []),
         "session_id": session_status.get("session_id", ""),
         "output_dir": str(LOG_DIR),
         "file_bytes": session_status.get("file_bytes", 0),
         "compressed": session_status.get("compressed", LOG_DOWNLOAD_GZIP),
+        "rolling_enabled": bool(session_status.get("rolling_enabled")) if session_status else (LOG_ROLL_SECONDS > 0 or LOG_ROLL_SIZE_BYTES > 0),
+        "roll_seconds": session_status.get("roll_seconds", LOG_ROLL_SECONDS),
+        "roll_size_bytes": session_status.get("roll_size_bytes", LOG_ROLL_SIZE_BYTES),
         "last_error": session_status.get("last_error", ""),
         "completed_sessions": _completed_sessions_public(),
         "wheel_config": {
             "teeth_count": _wheel_teeth_count(),
             "sample_period_ms": _wheel_sample_period_ms(),
         },
+        "disk": _disk_usage(LOG_DIR),
+        "disk_min_free_bytes": LOG_MIN_FREE_BYTES,
+        "disk_ok": _disk_free_ok(LOG_DIR)[0],
     }
 
 
@@ -1871,6 +2310,31 @@ async def logging_start() -> Response:
             content=json.dumps({"ok": True, "enabled": True, "count": session_status.get("rows_written", 0), "connected_devices": connected_devices}, ensure_ascii=False),
             media_type="application/json",
             status_code=200,
+        )
+
+    disk_ok, disk_stats = _disk_free_ok(LOG_DIR)
+    if not disk_ok:
+        cleanup_log_dir()
+        disk_ok, disk_stats = _disk_free_ok(LOG_DIR)
+    if not disk_ok:
+        free_mb = disk_stats["free_bytes"] // (1024 * 1024)
+        need_mb = LOG_MIN_FREE_BYTES // (1024 * 1024)
+        return Response(
+            content=json.dumps(
+                {
+                    "ok": False,
+                    "message": (
+                        f"디스크 여유 공간이 부족해 로깅을 시작할 수 없습니다 "
+                        f"({free_mb}MB 남음, 최소 {need_mb}MB 필요). "
+                        "서버 용량을 확보한 뒤 다시 시도하세요."
+                    ),
+                    "disk": disk_stats,
+                    "connected_devices": connected_devices,
+                },
+                ensure_ascii=False,
+            ),
+            media_type="application/json",
+            status_code=507,
         )
 
     cleanup_log_dir()
@@ -1921,10 +2385,7 @@ async def logging_stop() -> Response:
         )
     download_token = secrets.token_urlsafe(16)
     download_payload = session.build_download_payload()
-    completed_downloads[download_token] = {
-        **download_payload,
-        "stopped_at": datetime.now(timezone.utc).isoformat(),
-    }
+    _store_completed_download(download_token, download_payload)
     return Response(
         content=json.dumps(
             {
@@ -1934,6 +2395,8 @@ async def logging_stop() -> Response:
                 "filename": download_payload["filename"],
                 "compressed": download_payload["compressed"],
                 "download_bytes": download_payload["download_bytes"],
+                "part_count": download_payload.get("part_count", 1),
+                "is_archive": download_payload.get("is_archive", False),
                 "completed_sessions": _completed_sessions_public(),
             },
             ensure_ascii=False,
@@ -1963,7 +2426,11 @@ def logging_download(download_token: str) -> Response:
 
     return FileResponse(
         path=file_path,
-        media_type="application/gzip" if payload.get("compressed") else "text/csv; charset=utf-8",
+        media_type=(
+            "application/zip"
+            if payload.get("is_archive")
+            else ("application/gzip" if payload.get("compressed") else "text/csv; charset=utf-8")
+        ),
         filename=payload["filename"],
         headers={"X-Download-Bytes": str(payload.get("download_bytes", file_path.stat().st_size))},
     )
@@ -1975,7 +2442,7 @@ def logging_delete_session(download_token: str) -> dict[str, Any]:
     if payload is None:
         return {"ok": False, "message": "삭제할 로깅 세션이 없습니다."}
 
-    _delete_log_file(str(payload.get("file_path", "")))
+    _delete_download_payload(payload)
     return {
         "ok": True,
         "deleted_token": download_token,
@@ -2005,24 +2472,32 @@ async def offset_calibrate(request: Request) -> dict[str, Any]:
             value_f = _as_float(value)
             if value_f is None:
                 continue
-            device_offsets[device_key][str(sensor_path)] = value_f
+            path = str(sensor_path)
+            device_offsets[device_key][path] = raw_value_to_offset(path, value_f)
+        from offset_shared import public_offset_status
+
+        status = public_offset_status(device_offsets)
         return {
             "ok": True,
             "mode": "manual",
             "device": device_key,
             "offsets": device_offsets.get(device_key, {}),
+            **status,
         }
 
     if device_key:
         snapshot = latest_sensor_snapshot_by_device.get(device_key)
         if not snapshot:
             return {"ok": False, "message": f"{device_key}의 최신 센서 데이터가 없어 오프셋을 잡을 수 없습니다."}
-        device_offsets[device_key] = dict(snapshot)
+        device_offsets[device_key] = snapshot_to_offsets(snapshot)
+        from offset_shared import public_offset_status
+
         return {
             "ok": True,
             "mode": "capture_latest",
             "device": device_key,
             "offsets": device_offsets[device_key],
+            **public_offset_status(device_offsets),
         }
 
     if not latest_sensor_snapshot_by_device:
@@ -2032,27 +2507,31 @@ async def offset_calibrate(request: Request) -> dict[str, Any]:
     for key, snapshot in latest_sensor_snapshot_by_device.items():
         if not snapshot:
             continue
-        device_offsets[key] = dict(snapshot)
+        device_offsets[key] = snapshot_to_offsets(snapshot)
         calibrated_devices.append(key)
 
     if not calibrated_devices:
         return {"ok": False, "message": "캘리브레이션 가능한 센서 데이터가 없습니다."}
+
+    from offset_shared import public_offset_status
 
     return {
         "ok": True,
         "mode": "capture_latest_all",
         "calibrated_devices": calibrated_devices,
         "count": len(calibrated_devices),
+        **public_offset_status(device_offsets),
     }
 
 
 @app.get("/api/offset/status")
 def offset_status() -> dict[str, Any]:
+    from offset_shared import public_offset_status
+
     return {
         "ok": True,
-        "offset_device_count": len(device_offsets),
+        **public_offset_status(device_offsets),
         "snapshot_device_count": len(latest_sensor_snapshot_by_device),
-        "offsets": device_offsets,
         "latest_snapshots": latest_sensor_snapshot_by_device,
     }
 

@@ -29,6 +29,7 @@
 #include "lis3dsh.h"
 #include "sensor_uart.h"
 #include "can_lws.h"
+#include "can_vehicle.h"
 #include "user_button.h"
 #include "wheel_speed_uart.h"
 /* USER CODE END Includes */
@@ -61,7 +62,7 @@ void SystemClock_Config(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
+/* USER CODE BEGIN 0 `*/
 
 /* USER CODE END 0 */
 
@@ -105,6 +106,7 @@ int main(void)
   ADC_LinearSensor_Init();
   SensorUart_Init();
   CAN_LWS_Init();
+  CAN_Vehicle_Init();
   UserButton_Init();
   WheelSpeedUart_Init();
   /* USER CODE END 2 */
@@ -117,6 +119,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     main_loop_count++;
+    CAN_Vehicle_Process();
     SensorUart_Process();
     UserButton_Process();
   }

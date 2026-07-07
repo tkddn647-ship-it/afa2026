@@ -55,7 +55,7 @@ void MX_CAN1_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN1_Init 2 */
-
+  /* 250 kbps @ APB1 42MHz: Prescaler=12, (1+BS1+BS2)=14 */
   /* USER CODE END CAN1_Init 2 */
 
 }
@@ -87,7 +87,7 @@ void MX_CAN2_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN2_Init 2 */
-
+  /* 500 kbps @ APB1 42MHz: Prescaler=6, (1+BS1+BS2)=14 */
   /* USER CODE END CAN2_Init 2 */
 
 }

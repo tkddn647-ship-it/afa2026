@@ -38,6 +38,9 @@ extern CAN_HandleTypeDef hcan2;
 
 /* USER CODE BEGIN Private defines */
 
+/* APB1 42 MHz: prescaler=12, 1+BS1+BS2=14 => 250 kbps */
+#define CAN_BITRATE_PRESCALER_250K  12U
+
 /* USER CODE END Private defines */
 
 void MX_CAN1_Init(void);

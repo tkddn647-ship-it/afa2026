@@ -26,6 +26,7 @@ from Uart_stm import (
     FLUSH_RATE_HZ,
     SAMPLE_RATE_HZ,
     UART_MODULE_VERSION,
+    UartOpenError,
     flush_batch,
     flush_loop,
     open_uart_serial,
@@ -63,6 +64,8 @@ DEFAULT_DEVICE = os.getenv("DEVICE", "raspberry-pi-stm")
 DEFAULT_UART_PORT_ENV = os.getenv("UART_PORT", DEFAULT_UART_PORT)
 SCRIPT_VERSION = "2026-06-24-lws-steering"
 STATUS_INTERVAL_S = 2.0
+UART_OPEN_RETRY_S = 5.0
+UART_RECONNECT_S = 3.0
 
 
 def sample_to_server_dict(sample: dict[str, Any]) -> dict[str, Any]:
@@ -73,23 +76,15 @@ def sample_to_server_dict(sample: dict[str, Any]) -> dict[str, Any]:
     mcu_temp = round(float(sample.get("ecu_temp", 0)), 1)
     steer_angle = round(float(sample.get("steering_angle", 0)), 1)
     steer_speed = round(float(sample.get("steering_speed", 0)), 0)
-    wheel_rpm_right = round(float(sample.get("wheel_rpm_right", 0)), 1)
-    wheel_rpm_left = round(float(sample.get("wheel_rpm_left", 0)), 1)
 
     return {
         "t": int(stm_ms),
         "ecu_temp": mcu_temp,
         "steering_angle": steer_angle,
         "steering_speed": steer_speed,
-        "wheel_rpm_right": wheel_rpm_right,
-        "wheel_rpm_left": wheel_rpm_left,
         "steering": {
             "angle": steer_angle,
             "speed": steer_speed,
-        },
-        "wheel": {
-            "rpm_right": wheel_rpm_right,
-            "rpm_left": wheel_rpm_left,
         },
         "linear": {
             "fr": round(float(sample["FR"]), 2),
@@ -268,19 +263,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    if args.list_ports:
-        print_uart_port_help()
-        sys.exit(0)
+def run_uart_session(args: argparse.Namespace, sender: BatchSender, global_stop: threading.Event) -> bool:
+    """UART 세션 1회. False=재연결 필요, True=정상 종료."""
+    session_stop = threading.Event()
+    try:
+        ser = open_uart_serial(args.port, args.baud, args.uart_timeout, fatal=False)
+    except UartOpenError as exc:
+        print(f"[warn] UART 열기 실패, {UART_OPEN_RETRY_S:.0f}s 후 재시도: {exc}")
+        return False
 
-    if not args.skip_probe and not probe_ingest_server(args.url, args.timeout):
-        sys.exit(1)
-
-    stop_event = threading.Event()
-    set_uart_debug(args.debug)
-    sender = BatchSender(args.url, args.device, args.timeout, args.realtime_url)
-    ser = open_uart_serial(args.port, args.baud, args.uart_timeout)
     port_name = ser.port or args.port
     print(f"[info] data_send_server {SCRIPT_VERSION} + uart_stm {UART_MODULE_VERSION}")
     print(
@@ -290,23 +281,23 @@ def main() -> None:
     )
     if args.realtime_url:
         print(f"[ready] realtime={args.realtime_url}")
-    print("[info] 2초마다 status 출력. 데이터 없으면 [warn] 확인")
+    print("[info] 2초마다 status 출력. STM 미연결이어도 UART 대기 유지")
 
     on_batch = on_batch_factory(sender)
-    reader = threading.Thread(target=read_loop, args=(ser, stop_event), daemon=True)
-    flusher = threading.Thread(target=flush_loop, args=(stop_event, on_batch), daemon=True)
-    monitor = threading.Thread(target=status_loop, args=(stop_event, sender, args.baud), daemon=True)
+    reader = threading.Thread(target=read_loop, args=(ser, session_stop), daemon=True)
+    flusher = threading.Thread(target=flush_loop, args=(session_stop, on_batch), daemon=True)
+    monitor = threading.Thread(target=status_loop, args=(session_stop, sender, args.baud), daemon=True)
     reader.start()
     flusher.start()
     monitor.start()
 
+    reconnect = False
     try:
-        while reader.is_alive():
+        while reader.is_alive() and not global_stop.is_set():
             time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n[stop] 종료 중...")
+        reconnect = reader.is_alive() is False and not global_stop.is_set()
     finally:
-        stop_event.set()
+        session_stop.set()
         reader.join(timeout=1.0)
         flusher.join(timeout=1.0)
         monitor.join(timeout=1.0)
@@ -315,6 +306,34 @@ def main() -> None:
         if remaining:
             print(f"[stop] 마지막 배치 {len(remaining)} 샘플 전송")
         print_runtime_status(sender, args.baud)
+
+    return not reconnect
+
+
+def main() -> None:
+    args = parse_args()
+    if args.list_ports:
+        print_uart_port_help()
+        sys.exit(0)
+
+    if not args.skip_probe and not probe_ingest_server(args.url, args.timeout):
+        sys.exit(1)
+
+    global_stop = threading.Event()
+    set_uart_debug(args.debug)
+    sender = BatchSender(args.url, args.device, args.timeout, args.realtime_url)
+
+    try:
+        while not global_stop.is_set():
+            if run_uart_session(args, sender, global_stop):
+                break
+            if global_stop.wait(UART_RECONNECT_S):
+                break
+            print(f"[info] UART 재연결 시도...")
+    except KeyboardInterrupt:
+        print("\n[stop] 종료 중...")
+    finally:
+        global_stop.set()
 
 
 if __name__ == "__main__":
