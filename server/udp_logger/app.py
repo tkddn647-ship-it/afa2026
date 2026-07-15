@@ -11,7 +11,9 @@ import urllib.error
 import urllib.request
 import zipfile
 from collections import deque
+from contextlib import suppress
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from time import monotonic, time
 from typing import Any
@@ -117,6 +119,9 @@ LOG_GZIP_LEVEL = int(os.getenv("LOG_GZIP_LEVEL", "6"))
 LOG_DELETE_AFTER_DOWNLOAD = os.getenv("LOG_DELETE_AFTER_DOWNLOAD", "1").strip().lower() in {"1", "true", "yes", "on"}
 LOG_MAX_DIR_BYTES = int(os.getenv("LOG_MAX_DIR_BYTES", str(512 * 1024 * 1024)))
 LOG_MIN_FREE_BYTES = int(os.getenv("LOG_MIN_FREE_BYTES", str(64 * 1024 * 1024)))
+CAMERA_INTERNAL_URL = os.getenv("CAMERA_INTERNAL_URL", "http://127.0.0.1:8012").strip().rstrip("/")
+LINK_CAMERA_RECORDING = os.getenv("LINK_CAMERA_RECORDING", "1").strip().lower() in {"1", "true", "yes", "on"}
+CAMERA_API_TIMEOUT_SEC = float(os.getenv("CAMERA_API_TIMEOUT_SEC", "3.0"))
 forward_success_count = 0
 forward_failure_count = 0
 forward_last_error = ""
@@ -1388,6 +1393,87 @@ def _post_forward_request(payload: dict[str, Any]) -> None:
         forward_last_error = str(exc)
 
 
+def _camera_api_json(method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    if not LINK_CAMERA_RECORDING or not CAMERA_INTERNAL_URL:
+        return {"ok": False, "linked": False, "message": "camera linking disabled"}
+    url = f"{CAMERA_INTERNAL_URL}{path}"
+    data = None
+    headers = {"Accept": "application/json"}
+    if body is not None:
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json; charset=utf-8"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=CAMERA_API_TIMEOUT_SEC) as response:
+            payload = response.read().decode("utf-8")
+            return json.loads(payload) if payload else {"ok": True}
+    except urllib.error.HTTPError as exc:
+        try:
+            payload = exc.read().decode("utf-8")
+            return json.loads(payload) if payload else {"ok": False, "message": str(exc)}
+        except (json.JSONDecodeError, OSError, ValueError):
+            return {"ok": False, "message": str(exc)}
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+def _camera_recording_filename(session_id: str) -> str:
+    return f"camera-{session_id}.mp4"
+
+
+def _session_sync_path(session_id: str) -> Path:
+    return LOG_DIR / f"session_sync_{session_id}.json"
+
+
+def _write_session_sync(session_id: str, payload: dict[str, Any]) -> Path:
+    path = _session_sync_path(session_id)
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        with suppress(OSError, json.JSONDecodeError, ValueError):
+            existing = json.loads(path.read_text(encoding="utf-8"))
+    merged = {**existing, **payload, "session_id": session_id, "updated_at": datetime.now(timezone.utc).isoformat()}
+    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Mirror next to camera recordings for analysis upload convenience.
+    with suppress(OSError):
+        cam_dir = Path("/home/ubuntu/udp_realtime/camera_recordings")
+        cam_dir.mkdir(parents=True, exist_ok=True)
+        (cam_dir / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    return path
+
+
+def _start_linked_camera_recording(session_id: str) -> dict[str, Any]:
+    body = {
+        "session_id": session_id,
+        "filename": _camera_recording_filename(session_id),
+        "capture": "camera",
+        "max_frames": 0,
+    }
+    result = _camera_api_json("POST", "/api/recording/start", body)
+    if result.get("ok") or result.get("already_active") or result.get("armed"):
+        return {**result, "linked": True}
+    message = str(result.get("message") or "").lower()
+    # RTSP may fail briefly before publisher connects; arm/retry via start is fine for http mode.
+    if "no camera frame" in message or "404" in message or "연결" in message or "rtsp" in message:
+        armed = _camera_api_json("POST", "/api/recording/arm", body)
+        return {**armed, "linked": True, "armed": bool(armed.get("armed") or armed.get("ok"))}
+    return {**result, "linked": True}
+
+
+def _stop_linked_camera_recording() -> dict[str, Any]:
+    status = _camera_api_json("GET", "/api/recording/status")
+    if status.get("active"):
+        return {**_camera_api_json("POST", "/api/recording/stop"), "linked": True}
+    _camera_api_json("POST", "/api/recording/disarm")
+    return {"ok": True, "linked": True, "armed": False}
+
+
+def _linked_camera_recording_status() -> dict[str, Any]:
+    if not LINK_CAMERA_RECORDING:
+        return {"linked": False}
+    status = _camera_api_json("GET", "/api/recording/status")
+    return {**status, "linked": True}
+
+
 async def maybe_forward_payload(payload: dict[str, Any], *, skip: bool = False) -> None:
     if skip or not forward_enabled():
         return
@@ -2290,6 +2376,7 @@ def logging_status() -> dict[str, Any]:
         "disk": _disk_usage(LOG_DIR),
         "disk_min_free_bytes": LOG_MIN_FREE_BYTES,
         "disk_ok": _disk_free_ok(LOG_DIR)[0],
+        "camera_recording": _linked_camera_recording_status() if logging_enabled else {"linked": LINK_CAMERA_RECORDING},
     }
 
 
@@ -2345,6 +2432,25 @@ async def logging_start() -> Response:
     logging_session = CsvLogSession(started_epoch_ms=logging_started_epoch_ms)
     logging_session.start()
     logging_enabled = True
+    camera_result = _start_linked_camera_recording(logging_session.session_id)
+    sync_path = _write_session_sync(
+        logging_session.session_id,
+        {
+            "logging_started_at": datetime.fromtimestamp(
+                logging_started_epoch_ms / 1000.0, tz=timezone.utc
+            ).isoformat(),
+            "logging_started_epoch_ms": logging_started_epoch_ms,
+            "csv_prefix": f"sensor_log_{logging_session.session_id}",
+            "camera_prefix": f"camera-{logging_session.session_id}",
+            "camera_mode": str(camera_result.get("record_mode") or camera_result.get("mode") or ""),
+            "camera_started_at": str(camera_result.get("started_at") or ""),
+            "camera_filename": str(camera_result.get("filename") or ""),
+            "camera_ok": bool(camera_result.get("ok")),
+            "offset_sec_hint": 0.0,
+            "sync_rule": "video_t0_equals_logging_start",
+            "note": "분석 시 CSV t0(첫 timestamp)와 영상 0초를 맞추고, session_sync의 offset_sec_hint로 미세 보정",
+        },
+    )
     return Response(
         content=json.dumps(
             {
@@ -2354,6 +2460,9 @@ async def logging_start() -> Response:
                 "connected_devices": connected_devices,
                 "output_dir": str(LOG_DIR),
                 "compressed": LOG_DOWNLOAD_GZIP,
+                "session_id": logging_session.session_id,
+                "camera_recording": camera_result,
+                "session_sync": str(sync_path),
             },
             ensure_ascii=False,
         ),
@@ -2370,22 +2479,52 @@ async def logging_stop() -> Response:
     logging_session = None
 
     if session is None:
+        camera_result = _stop_linked_camera_recording()
         return Response(
-            content=json.dumps({"ok": False, "message": "저장할 데이터가 없습니다."}, ensure_ascii=False),
+            content=json.dumps(
+                {"ok": False, "message": "저장할 데이터가 없습니다.", "camera_recording": camera_result},
+                ensure_ascii=False,
+            ),
             media_type="application/json",
             status_code=200,
         )
 
     await session.close()
+    camera_result = _stop_linked_camera_recording()
     if session.rows_written < 1:
         return Response(
-            content=json.dumps({"ok": False, "message": "저장할 데이터가 없습니다."}, ensure_ascii=False),
+            content=json.dumps(
+                {
+                    "ok": False,
+                    "message": "저장할 데이터가 없습니다.",
+                    "camera_recording": camera_result,
+                },
+                ensure_ascii=False,
+            ),
             media_type="application/json",
             status_code=200,
         )
     download_token = secrets.token_urlsafe(16)
     download_payload = session.build_download_payload()
     _store_completed_download(download_token, download_payload)
+    sync_path = _write_session_sync(
+        session.session_id,
+        {
+            "logging_stopped_at": datetime.now(timezone.utc).isoformat(),
+            "csv_filename": download_payload.get("filename", ""),
+            "csv_rows": session.rows_written,
+            "camera_filename": str(camera_result.get("filename") or ""),
+            "camera_segments": list(camera_result.get("segments") or camera_result.get("recording", {}).get("segments") or []),
+            "camera_bytes": int(
+                camera_result.get("file_size")
+                or camera_result.get("recording", {}).get("file_size")
+                or camera_result.get("bytes_written")
+                or 0
+            ),
+            "offset_sec_hint": 0.0,
+            "sync_rule": "video_t0_equals_logging_start",
+        },
+    )
     return Response(
         content=json.dumps(
             {
@@ -2398,6 +2537,9 @@ async def logging_stop() -> Response:
                 "part_count": download_payload.get("part_count", 1),
                 "is_archive": download_payload.get("is_archive", False),
                 "completed_sessions": _completed_sessions_public(),
+                "session_id": session.session_id,
+                "camera_recording": camera_result,
+                "session_sync": str(sync_path),
             },
             ensure_ascii=False,
         ),

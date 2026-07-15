@@ -1,0 +1,36 @@
+{
+  "name": "A-FA",
+  "wheelbase_m": 2.4,
+  "track_m": 1.68,
+  "tire_radius_m": 0.33,
+  "steer_ratio": 12.0,
+  "mass_kg": 650,
+  "linear_sensor": {
+    "neutral_mm": 40.0,
+    "mm_per_count": 1.0,
+    "visual_scale": 0.022
+  },
+  "derived": {
+    "sus_angle_gain": 1.0,
+    "yaw_from_steer": true
+  },
+  "visualization": {
+    "pitch_gain": 0.22,
+    "roll_gain": 0.35,
+    "tilt_max_deg": 10.0,
+    "sus_gain": 0.85,
+    "sus_tilt_max_deg": 6.0
+  },
+  "fsm": {
+    "stop_speed_kmh": 5,
+    "brake_pressure_min": 0.5,
+    "long_brake_g": -0.18,
+    "corner_min_speed_kmh": 15,
+    "corner_min_steer_deg": 8,
+    "corner_min_lat_g": 0.05,
+    "corner_steer_alt_deg": 15,
+    "accel_throttle_min": 3,
+    "accel_long_g": 0.12,
+    "min_segment_sec": 0.5
+  }
+}

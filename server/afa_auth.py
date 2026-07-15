@@ -35,26 +35,16 @@ SESSION_COOKIE = "afa_session"
 PUBLIC_GET_PATHS = {
     "/login",
     "/auth/sso",
-    "/api/auth/status",
     "/api/auth/login",
-    "/api/stats",
-    "/api/offset/status",
-    "/api/telemetry/snapshot",
-    "/api/recording/status",
-    "/favicon.ico",
+    "/api/auth/status",
 }
 PUBLIC_POST_PATHS = {
     "/ingest",
     "/api/live/ingest",
     "/api/camera/frame",
-    "/api/auth/login",
-    "/api/auth/logout",
 }
 PUBLIC_GET_PREFIXES = (
     "/api/live/snapshot",
-    "/api/camera/latest",
-    "/api/camera/stream",
-    "/api/camera/preview",
 )
 
 
@@ -162,10 +152,7 @@ def _is_public_request(request: Request) -> bool:
         return True
     if request.method == "POST" and path in PUBLIC_POST_PATHS:
         return True
-    if request.method == "GET" and any(
-        path == prefix or path.startswith(prefix + "/") or path.startswith(prefix + ".")
-        for prefix in PUBLIC_GET_PREFIXES
-    ):
+    if request.method == "GET" and any(path == prefix or path.startswith(prefix + "/") for prefix in PUBLIC_GET_PREFIXES):
         return True
     return False
 
@@ -182,7 +169,7 @@ def enrich_nav_with_sso(nav: dict[str, Any], request: Request, current: str) -> 
     if not user:
         return nav
     enriched = dict(nav)
-    for key in ("logger", "realtime", "camera"):
+    for key in ("logger", "realtime", "camera", "analysis"):
         if key == current:
             continue
         base_url = str(enriched.get(key, "")).strip()
@@ -272,48 +259,17 @@ def _login_html(next_path: str, error: str = "") -> str:
   </style>
 </head>
 <body>
-  <form class="card" id="loginForm">
+  <form class="card" method="post" action="/api/auth/login">
     <h1>로그인</h1>
     <p>AFA 대시보드 접속</p>
-    <div id="loginError" class="error" style="display:none;"></div>
     {error_block}
     <label for="username">아이디</label>
     <input id="username" name="username" autocomplete="username" required>
     <label for="password">비밀번호</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>
-    <input type="hidden" id="next" name="next" value="{quote(next_path, safe='/')}">
+    <input type="hidden" name="next" value="{quote(next_path, safe='/')}">
     <button type="submit">로그인</button>
   </form>
-  <script>
-    const form = document.getElementById('loginForm');
-    const errorBox = document.getElementById('loginError');
-    form.addEventListener('submit', async (event) => {{
-      event.preventDefault();
-      errorBox.style.display = 'none';
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-      const next = document.getElementById('next').value || '/';
-      try {{
-        const res = await fetch('/api/auth/login', {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          credentials: 'same-origin',
-          cache: 'no-store',
-          body: JSON.stringify({{ username, password, next }}),
-        }});
-        const data = await res.json().catch(() => ({{}}));
-        if (!res.ok || !data.ok) {{
-          errorBox.textContent = data.message || '로그인에 실패했습니다.';
-          errorBox.style.display = 'block';
-          return;
-        }}
-        window.location.replace(data.next || '/');
-      }} catch (err) {{
-        errorBox.textContent = '서버 연결에 실패했습니다.';
-        errorBox.style.display = 'block';
-      }}
-    }});
-  </script>
 </body>
 </html>"""
 
@@ -331,9 +287,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             next_path = request.url.path
             if request.url.query:
                 next_path = f"{next_path}?{request.url.query}"
-            safe_next = _safe_next_path(next_path)
-            login_url = "/login" if safe_next == "/" else f"/login?next={quote(safe_next)}"
-            return RedirectResponse(url=login_url, status_code=303)
+            return RedirectResponse(url=f"/login?next={quote(next_path)}", status_code=303)
 
         return JSONResponse(
             status_code=401,
@@ -344,17 +298,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 def _safe_next_path(value: str) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
         return "/"
-    path_only = value.split("?", 1)[0]
-    blocked_prefixes = ("/api/", "/auth/", "/login")
-    if path_only in {"/api/auth/login", "/api/auth/logout"}:
-        return "/"
-    if any(path_only.startswith(prefix) for prefix in blocked_prefixes):
-        return "/"
     return value
 
 
 def _set_session_cookie(response: RedirectResponse | JSONResponse, username: str) -> None:
-    _clear_session_cookie(response)
     response.set_cookie(
         key=SESSION_COOKIE,
         value=create_session_token(username),
@@ -365,15 +312,6 @@ def _set_session_cookie(response: RedirectResponse | JSONResponse, username: str
     )
 
 
-def _clear_session_cookie(response: RedirectResponse | JSONResponse) -> None:
-    response.delete_cookie(
-        SESSION_COOKIE,
-        path="/",
-        httponly=True,
-        samesite="lax",
-    )
-
-
 def install_auth(app: FastAPI) -> None:
     if not auth_enabled():
         return
@@ -381,14 +319,10 @@ def install_auth(app: FastAPI) -> None:
     app.add_middleware(AuthMiddleware)
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page(request: Request):
+    async def login_page(request: Request) -> HTMLResponse:
         if get_request_user(request):
             return RedirectResponse(url=_safe_next_path(request.query_params.get("next", "/")), status_code=303)
         return HTMLResponse(_login_html(_safe_next_path(request.query_params.get("next", "/"))))
-
-    @app.get("/api/auth/login")
-    async def login_get_redirect():
-        return RedirectResponse(url="/login", status_code=303)
 
     @app.post("/api/auth/login")
     async def login_submit(request: Request):
@@ -421,12 +355,8 @@ def install_auth(app: FastAPI) -> None:
 
     @app.post("/api/auth/logout")
     async def logout(request: Request):
-        wants_json = "application/json" in request.headers.get("accept", "")
-        if wants_json:
-            response: RedirectResponse | JSONResponse = JSONResponse({"ok": True})
-        else:
-            response = RedirectResponse(url="/login", status_code=303)
-        _clear_session_cookie(response)
+        response = RedirectResponse(url="/login", status_code=303)
+        response.delete_cookie(SESSION_COOKIE, path="/")
         return response
 
     @app.get("/api/auth/status")
