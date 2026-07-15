@@ -1,0 +1,206 @@
+<style>
+  .offset-chip.on {
+    border-color: rgba(52, 211, 153, 0.45);
+    background: rgba(6, 78, 59, 0.28);
+  }
+
+  .offset-chip.on strong {
+    color: #bbf7d0;
+  }
+
+  .offset-panel {
+    margin-top: 12px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(120, 160, 220, 0.18);
+    background: rgba(10, 16, 28, 0.72);
+  }
+
+  .offset-panel[hidden] {
+    display: none !important;
+  }
+
+  .offset-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .offset-panel-head h3 {
+    margin: 0;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #dce8ff;
+  }
+
+  .offset-panel-note {
+    margin: 0 0 10px;
+    font-size: 0.74rem;
+    color: #8ba3c7;
+    line-height: 1.5;
+  }
+
+  .offset-detail-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .offset-detail-group {
+    border: 1px solid rgba(120, 160, 220, 0.14);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.22);
+  }
+
+  .offset-detail-device {
+    padding: 8px 12px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #8ba3c7;
+    border-bottom: 1px solid rgba(120, 160, 220, 0.12);
+    background: rgba(16, 24, 40, 0.55);
+  }
+
+  .offset-detail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  .offset-detail-row + .offset-detail-row {
+    border-top: 1px solid rgba(120, 160, 220, 0.08);
+  }
+
+  .offset-detail-label {
+    color: #c8daf8;
+    font-weight: 700;
+  }
+
+  .offset-detail-value {
+    color: #eef4ff;
+    font-variant-numeric: tabular-nums;
+    font-weight: 800;
+    text-align: right;
+  }
+
+  .offset-empty {
+    font-size: 0.8rem;
+    color: #8ba3c7;
+    line-height: 1.5;
+  }
+
+  .camera-page .offset-panel {
+    position: absolute;
+    left: 12px;
+    top: 58px;
+    z-index: 6;
+    width: min(420px, calc(100% - 220px));
+    margin-top: 0;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+
+  .realtime-page .offset-panel,
+  .logger-page .offset-panel {
+    margin-bottom: 14px;
+  }
+</style>
+
+<div class="offset-panel desktop-only" id="offsetPanel" hidden>
+  <div class="offset-panel-head">
+    <h3>오프셋 상세</h3>
+    <button type="button" class="graph-drawer-close" id="offsetPanelClose">닫기</button>
+  </div>
+  <p class="offset-panel-note">로깅 서버에서 맞춘 값이 실시간·카메라 화면에도 동일하게 반영됩니다.</p>
+  <div id="offsetDetailList" class="offset-detail-list">
+    <div class="offset-empty">적용된 오프셋이 없습니다.</div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    function groupOffsetItems(items) {
+      const groups = new Map();
+      (items || []).forEach((item) => {
+        const device = item.device || 'unknown';
+        if (!groups.has(device)) groups.set(device, []);
+        groups.get(device).push(item);
+      });
+      return groups;
+    }
+
+    window.renderOffsetStatus = function renderOffsetStatus(offsetData) {
+      const chip = document.getElementById('offsetChip');
+      const label = document.getElementById('offsetStatus');
+      const resetBtn = document.getElementById('offsetResetButton');
+      const panel = document.getElementById('offsetPanel');
+      const list = document.getElementById('offsetDetailList');
+      if (!chip || !label || !list) return;
+
+      const deviceCount = Number(offsetData?.offset_device_count || 0);
+      const sensorCount = Number(offsetData?.offset_sensor_count || 0);
+      const items = offsetData?.items || [];
+
+      if (deviceCount > 0) {
+        chip.classList.add('on');
+        label.textContent = deviceCount + '장비 · ' + sensorCount + '센서';
+        if (resetBtn) resetBtn.disabled = false;
+      } else {
+        chip.classList.remove('on');
+        label.textContent = '없음';
+        if (resetBtn) resetBtn.disabled = true;
+        if (panel) panel.hidden = true;
+      }
+
+      if (!items.length) {
+        list.innerHTML = '<div class="offset-empty">적용된 오프셋이 없습니다.</div>';
+        return;
+      }
+
+      const groups = groupOffsetItems(items);
+      list.innerHTML = Array.from(groups.entries()).map(([device, rows]) => (
+        '<div class="offset-detail-group">' +
+          '<div class="offset-detail-device">' + device + '</div>' +
+          rows.map((row) => (
+            '<div class="offset-detail-row">' +
+              '<span class="offset-detail-label">' + row.label + '</span>' +
+              '<span class="offset-detail-value">' + row.display + '</span>' +
+            '</div>'
+          )).join('') +
+        '</div>'
+      )).join('');
+    };
+
+    function setOffsetPanelOpen(open) {
+      const panel = document.getElementById('offsetPanel');
+      if (!panel) return;
+      panel.hidden = !open;
+    }
+
+    const chip = document.getElementById('offsetChip');
+    if (chip) {
+      chip.style.cursor = 'pointer';
+      chip.title = '오프셋 상세 보기';
+      chip.addEventListener('click', () => {
+        const panel = document.getElementById('offsetPanel');
+        if (!panel) return;
+        if (!chip.classList.contains('on')) return;
+        setOffsetPanelOpen(panel.hidden);
+      });
+    }
+
+    const closeBtn = document.getElementById('offsetPanelClose');
+    if (closeBtn) closeBtn.addEventListener('click', () => setOffsetPanelOpen(false));
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') setOffsetPanelOpen(false);
+    });
+  })();
+</script>
