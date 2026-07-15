@@ -1,8 +1,0 @@
-logLevel: warn
-rtsp: yes
-rtspAddress: :8554
-rtpAddress: :8004
-rtcpAddress: :8005
-paths:
-  cam:
-    source: publisher
