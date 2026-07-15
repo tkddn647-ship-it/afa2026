@@ -1,0 +1,6 @@
+camera_recordings/
+__pycache__/
+*.log
+sensor_log_*.csv
+bin/
+uploads/

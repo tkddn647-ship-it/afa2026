@@ -1,55 +1,47 @@
 #!/usr/bin/env bash
-# Install a static ffmpeg binary into sever/bin/ (~40MB, no apt dependencies).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
-BIN_DIR="$ROOT/bin"
-TARGET="$BIN_DIR/ffmpeg"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BIN_DIR="${ROOT_DIR}/udp_realtime/bin"
+TARGET="${BIN_DIR}/ffmpeg"
+TMP_DIR="$(mktemp -d)"
+ARCH="$(uname -m)"
 
-mkdir -p "$BIN_DIR"
+cleanup() {
+  rm -rf "${TMP_DIR}"
+}
+trap cleanup EXIT
 
-arch="$(uname -m)"
-case "$arch" in
-  x86_64) ffmpeg_arch="amd64" ;;
-  aarch64 | arm64) ffmpeg_arch="arm64" ;;
+mkdir -p "${BIN_DIR}"
+
+if [[ -x "${TARGET}" ]]; then
+  echo "[ok] ffmpeg already installed: ${TARGET}"
+  "${TARGET}" -version | head -1
+  exit 0
+fi
+
+case "${ARCH}" in
+  x86_64|amd64)
+    URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+    ;;
+  aarch64|arm64)
+    URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
+    ;;
   *)
-    echo "[error] unsupported architecture: $arch"
+    echo "[error] unsupported architecture: ${ARCH}" >&2
     exit 1
     ;;
 esac
 
-if [[ -x "$TARGET" ]]; then
-  echo "[ok] ffmpeg already installed: $TARGET"
-  "$TARGET" -version | head -n 1
-  exit 0
-fi
-
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
-
-url="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-${ffmpeg_arch}-static.tar.xz"
-archive="$tmp/ffmpeg.tar.xz"
-
-echo "[download] $url"
-if command -v curl >/dev/null 2>&1; then
-  curl -fL --progress-bar -o "$archive" "$url"
-elif command -v wget >/dev/null 2>&1; then
-  wget -O "$archive" "$url"
-else
-  echo "[error] curl or wget is required"
+echo "[download] ${URL}"
+curl -fL --retry 3 --retry-delay 2 -o "${TMP_DIR}/ffmpeg.tar.xz" "${URL}"
+tar -xJf "${TMP_DIR}/ffmpeg.tar.xz" -C "${TMP_DIR}"
+FFMPEG_SRC="$(find "${TMP_DIR}" -maxdepth 2 -type f -name ffmpeg | head -1)"
+if [[ -z "${FFMPEG_SRC}" ]]; then
+  echo "[error] ffmpeg binary not found in archive" >&2
   exit 1
 fi
 
-tar -xJf "$archive" -C "$tmp"
-ffmpeg_bin="$(find "$tmp" -type f -name ffmpeg -executable | head -n 1)"
-if [[ -z "$ffmpeg_bin" ]]; then
-  echo "[error] ffmpeg binary not found in archive"
-  exit 1
-fi
-
-cp "$ffmpeg_bin" "$TARGET"
-chmod +x "$TARGET"
-
-echo "[ok] installed $TARGET"
-"$TARGET" -version | head -n 1
-echo "[next] restart camera_server: python camera_server.py"
+install -m 0755 "${FFMPEG_SRC}" "${TARGET}"
+echo "[ok] installed ${TARGET}"
+"${TARGET}" -version | head -1

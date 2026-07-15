@@ -90,10 +90,6 @@
       font-variant-numeric: tabular-nums;
     }
 
-    .chip.on strong {
-      color: var(--good);
-    }
-
     .panel {
       background: var(--surface);
       backdrop-filter: blur(12px);
@@ -197,12 +193,6 @@
       border-color: rgba(248, 113, 113, 0.35);
       background: rgba(80, 20, 30, 0.45);
       color: #fecdd3;
-    }
-
-    button.offset {
-      border-color: rgba(52, 211, 153, 0.35);
-      background: rgba(20, 83, 45, 0.35);
-      color: #bbf7d0;
     }
 
     .session-head {
@@ -321,7 +311,7 @@
   </style>
   {% include "partials/mobile_compact.html" %}
 </head>
-<body class="logger-page">
+<body>
   <div class="page">
     <div class="topbar">
       <div class="brand">
@@ -330,27 +320,33 @@
         <div class="chips">
           <span class="chip"><span>5초 평균</span> <strong><span id="hz5">0.0</span> Hz</strong></span>
           <span class="chip"><span>연결 장비</span> <strong><span id="connectedDevices">0</span></strong></span>
-          <span class="chip offset-chip" id="offsetChip"><span>오프셋</span> <strong id="offsetStatus">없음</strong></span>
         </div>
       </div>
       {% include "partials/server_nav.html" %}
     </div>
 
+    <section class="stats-grid" aria-hidden="true" style="display:none">
+      <div class="stat-card">
+        <div class="stat-label">5초 평균 수신량</div>
+        <div class="stat-value"><span id="hz5dup">0.0</span><span class="unit">Hz</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">연결 장비</div>
+        <div class="stat-value" id="connectedDevicesDup">0</div>
+      </div>
+    </section>
+
     <div class="bar desktop-only">
-      <button id="offsetCalibrateButton" class="offset" type="button">오프셋 맞춤</button>
-      <button id="offsetResetButton" class="stop" type="button" disabled>오프셋 초기화</button>
-      <button id="startButton" type="button">로깅 시작</button>
-      <button id="stopButton" class="stop" type="button" disabled>로깅 중지</button>
+      <button id="startButton" type="button">로깅+녹화 시작</button>
+      <button id="stopButton" class="stop" type="button" disabled>로깅+녹화 중지</button>
       <span id="statusLine">상태 확인 중...</span>
     </div>
-
-    {% include "partials/offset_status.html" %}
 
     <section class="panel desktop-only" id="sessionCard">
       <div class="session-head">
         <div>
           <h2>로깅 세션</h2>
-          <p>진행 중 용량을 표시하고, 종료 후 파일을 남겨 Download / Delete 할 수 있습니다.</p>
+          <p>진행 중 용량을 표시하고, 종료 후 파일을 남겨 Download / Delete 할 수 있습니다. 로깅 시작 시 카메라 녹화도 같은 세션 ID로 함께 진행됩니다.</p>
         </div>
         <span class="badge idle" id="sessionBadge">대기 중</span>
       </div>
@@ -371,6 +367,10 @@
         <div class="metric">
           <div class="stat-label">현재 파일</div>
           <div class="stat-value" id="activeFile" style="font-size:0.95rem;">-</div>
+        </div>
+        <div class="metric">
+          <div class="stat-label">카메라 녹화</div>
+          <div class="stat-value" id="activeCamera" style="font-size:0.95rem;">-</div>
         </div>
       </div>
 
@@ -399,57 +399,11 @@
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
         body: '{}',
       });
       let data = {};
       try { data = await res.json(); } catch (e) {}
       return { ok: res.ok, status: res.status, data };
-    }
-
-    function setOffsetStatus(offsetData) {
-      if (typeof window.renderOffsetStatus === 'function') {
-        window.renderOffsetStatus(offsetData);
-      }
-    }
-
-    async function calibrateOffset() {
-      if (!confirm('리니어·가속 X/Y는 0, 가속 Z는 정지 시 1G 기준으로 오프셋 맞출까요?\n정지 상태에서 실행하는 것을 권장합니다.')) return;
-      try {
-        const res = await fetch('/api/offset/calibrate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: '{}',
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.message || '오프셋 맞춤 실패');
-        const deviceCount = (data.calibrated_devices && data.calibrated_devices.length) || data.count || (data.device ? 1 : 0);
-        document.getElementById('statusLine').textContent =
-          '오프셋 적용됨' + (deviceCount ? ' (' + deviceCount + '장비)' : '') + ' — 실시간·카메라에도 반영됩니다.';
-        if (typeof window.renderOffsetStatus === 'function') window.renderOffsetStatus(data);
-        refreshAll();
-      } catch (err) {
-        document.getElementById('statusLine').textContent = '오프셋 맞춤 실패: ' + (err.message || err);
-      }
-    }
-
-    async function resetOffset() {
-      if (!confirm('저장된 오프셋을 모두 초기화할까요?')) return;
-      try {
-        const res = await fetch('/api/offset/reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: '{}',
-        });
-        const data = await res.json();
-        if (!res.ok || !data.ok) throw new Error(data.message || '오프셋 초기화 실패');
-        document.getElementById('statusLine').textContent = data.message || '오프셋이 초기화되었습니다.';
-        refreshAll();
-      } catch (err) {
-        document.getElementById('statusLine').textContent = '오프셋 초기화 실패: ' + (err.message || err);
-      }
     }
 
     function setBadge(mode, text) {
@@ -502,49 +456,67 @@
       }
     }
 
+    function formatCameraStatus(camera) {
+      if (!camera || !camera.linked) return '연동 안 함';
+      if (camera.active) {
+        if (camera.record_mode === 'rtsp' || camera.mode === 'rtsp-mp4') {
+          return 'RTSP 녹화 중 · ' + formatBytes(camera.bytes_written) +
+            (camera.filename ? ' · ' + camera.filename : '');
+        }
+        return '녹화 중 · ' + (camera.frames_written || 0) + ' frames' +
+          (camera.filename ? ' · ' + camera.filename : '');
+      }
+      if (camera.armed) return '대기 중 (프레임 수신 시 시작)';
+      if (camera.message && String(camera.message).indexOf('프레임 상한') >= 0) {
+        return '녹화 중단: 프레임 상한';
+      }
+      if (!camera.active && (camera.bytes_written > 0 || camera.frames_written > 0)) {
+        return '녹화 중지됨 · ' + formatBytes(camera.bytes_written || 0) +
+          (camera.filename ? ' · ' + camera.filename : '');
+      }
+      return '대기';
+    }
+
     async function refreshAll() {
       try {
-        const [statsRes, logRes, offsetRes] = await Promise.all([
+        const [statsRes, logRes] = await Promise.all([
           fetch('/api/stats', { cache: 'no-store' }),
           fetch('/api/logging/status', { cache: 'no-store' }),
-          fetch('/api/offset/status', { cache: 'no-store' }),
         ]);
         const stats = await statsRes.json();
         const logging = await logRes.json();
-        const offset = await offsetRes.json();
-
-        setOffsetStatus(offset);
 
         const hz = String(stats.hz_5s_avg ?? 0);
         const devices = String(logging.connected_devices ?? 0);
         document.getElementById('hz5').textContent = hz;
         document.getElementById('connectedDevices').textContent = devices;
 
-        const connected = Number(logging.connected_devices || 0);
         const active = Boolean(logging.enabled);
-        document.getElementById('startButton').disabled = active || connected < 1;
+        document.getElementById('startButton').disabled = active || !logging.can_start;
         document.getElementById('stopButton').disabled = !active;
-        document.getElementById('offsetCalibrateButton').disabled = connected < 1;
 
         const activePanel = document.getElementById('activePanel');
         if (active) {
-          setBadge('active', '로깅 중');
+          setBadge('active', '로깅+녹화');
           activePanel.hidden = false;
           document.getElementById('activeBytes').textContent = formatBytes(logging.file_bytes);
           document.getElementById('activeRows').textContent = String(logging.rows_written ?? 0);
           document.getElementById('activeFileCount').textContent = String(logging.file_count ?? 0);
           document.getElementById('activeFile').textContent = logging.active_file || logging.session_id || '-';
+          const camera = logging.camera_recording || {};
+          document.getElementById('activeCamera').textContent = formatCameraStatus(camera);
           document.getElementById('statusLine').textContent =
             '저장 중... ' + formatBytes(logging.file_bytes) +
             ' / ' + (logging.rows_written ?? 0) + ' rows' +
             (logging.file_count > 1 ? ' / ' + logging.file_count + ' files' : '') +
             (logging.rolling_enabled && logging.roll_seconds ? ' / roll ' + Math.round(logging.roll_seconds / 60) + 'm' : '') +
-            (logging.dropped_rows ? ' / dropped ' + logging.dropped_rows : '');
+            (logging.dropped_rows ? ' / dropped ' + logging.dropped_rows : '') +
+            ' · 카메라: ' + formatCameraStatus(camera);
         } else {
           activePanel.hidden = true;
           setBadge(logging.can_start ? 'idle' : 'warn', logging.can_start ? '대기 중' : '장비 없음');
           document.getElementById('statusLine').textContent = logging.can_start
-            ? '로깅 시작을 누르세요.'
+            ? '로깅+녹화 시작을 누르세요.'
             : '연결된 장비가 없습니다.';
         }
 
@@ -554,28 +526,29 @@
       }
     }
 
-    document.getElementById('offsetCalibrateButton').addEventListener('click', calibrateOffset);
-    document.getElementById('offsetResetButton').addEventListener('click', resetOffset);
-
     document.getElementById('startButton').addEventListener('click', async () => {
       const result = await postJson('/api/logging/start');
       if (!result.ok) {
         document.getElementById('statusLine').textContent = result.data.message || '로깅 시작 실패';
         return;
       }
-      document.getElementById('statusLine').textContent = '로깅 시작됨';
+      document.getElementById('statusLine').textContent =
+        '로깅+녹화 시작됨' +
+        (result.data.camera_recording && result.data.camera_recording.armed ? ' (카메라 프레임 대기)' : '');
       refreshAll();
     });
 
     document.getElementById('stopButton').addEventListener('click', async () => {
       const result = await postJson('/api/logging/stop');
       if (!result.ok || !result.data.ok) {
-        document.getElementById('statusLine').textContent = result.data.message || '로깅 중지 실패';
+        document.getElementById('statusLine').textContent = result.data.message || '로깅+녹화 중지 실패';
         return;
       }
+      const camera = result.data.camera_recording || {};
       document.getElementById('statusLine').textContent =
         '로깅 완료: ' + (result.data.filename || '') + ' (' + formatBytes(result.data.download_bytes) + ')' +
-        (result.data.part_count > 1 ? ' / ' + result.data.part_count + ' parts' : '');
+        (result.data.part_count > 1 ? ' / ' + result.data.part_count + ' parts' : '') +
+        (camera.filename ? ' · 영상: ' + camera.filename : '');
       renderCompleted(result.data.completed_sessions || []);
       refreshAll();
     });
