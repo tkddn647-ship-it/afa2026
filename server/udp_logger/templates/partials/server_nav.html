@@ -1,6 +1,6 @@
 <nav class="server-nav{% if nav_compact %} server-nav--compact{% endif %}" aria-label="서버 이동">
   <a href="{{ nav.logger }}"{% if nav.current == 'logger' %} class="active" aria-current="page"{% endif %}>로깅</a>
-  <a href="{{ nav.analysis }}"{% if nav.current == 'analysis' %} class="active" aria-current="page"{% endif %}>분석</a>
+  <a href="{{ nav.realtime }}"{% if nav.current == 'realtime' %} class="active" aria-current="page"{% endif %}>실시간</a>
   <a href="{{ nav.camera }}"{% if nav.current == 'camera' %} class="active" aria-current="page"{% endif %}>카메라</a>
   {% if auth_enabled and auth_user %}
   <button type="button" class="server-nav__logout-btn{% if nav_compact %} stop{% endif %}" data-logout-btn>로그아웃</button>

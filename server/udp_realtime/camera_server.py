@@ -1,6 +1,5 @@
 import asyncio
 import json
-import signal
 import struct
 import base64
 import binascii
@@ -45,15 +44,12 @@ MAX_FRAME_BYTES = int(os.getenv("CAMERA_MAX_FRAME_BYTES", str(4 * 1024 * 1024)))
 MAX_RECORD_FRAMES = int(os.getenv("CAMERA_MAX_RECORD_FRAMES", "36000"))
 FFMPEG_FINALIZE_TIMEOUT_SEC = int(os.getenv("CAMERA_RECORD_FFMPEG_TIMEOUT_SEC", "600"))
 LOCAL_FFMPEG = BASE_DIR / "bin" / "ffmpeg"
-LOGGER_SNAPSHOT_URL = os.getenv("LOGGER_SNAPSHOT_URL", "").strip()
+LOGGER_SNAPSHOT_URL = os.getenv("LOGGER_SNAPSHOT_URL", "http://127.0.0.1:8011/api/live/snapshot").strip()
+LOGGER_OFFSET_URL = os.getenv(
+    "LOGGER_OFFSET_URL",
+    f"{os.getenv('LOGGER_INTERNAL_URL', 'http://127.0.0.1:8000').strip().rstrip('/')}/api/offset/status",
+).strip()
 TELEMETRY_POLL_MS = int(os.getenv("CAMERA_TELEMETRY_POLL_MS", "100"))
-CAMERA_PREVIEW_POLL_MS = int(os.getenv("CAMERA_PREVIEW_POLL_MS", "250"))
-RECORD_MODE = os.getenv("CAMERA_RECORD_MODE", "rtsp").strip().lower() or "rtsp"
-RTSP_URL = os.getenv("CAMERA_RTSP_URL", "rtsp://127.0.0.1:8554/cam").strip()
-RTSP_TRANSPORT = os.getenv("CAMERA_RTSP_TRANSPORT", "tcp").strip().lower() or "tcp"
-RTSP_SEGMENT_SECONDS = int(os.getenv("CAMERA_RTSP_SEGMENT_SECONDS", "0"))
-RTSP_PREVIEW_ENABLED = os.getenv("CAMERA_RTSP_PREVIEW", "1").strip().lower() in {"1", "true", "yes", "on"}
-RTSP_PREVIEW_INTERVAL_SEC = float(os.getenv("CAMERA_RTSP_PREVIEW_INTERVAL_SEC", "0.5"))
 
 camera_state: dict[str, Any] = {
     "mime": "image/jpeg",
@@ -67,7 +63,6 @@ camera_state: dict[str, Any] = {
     "bytes": 0,
     "frame_url": "/api/camera/latest.jpg",
     "stream_url": "/api/camera/stream.mjpg",
-    "stm_ts_us": 0,
 }
 camera_frame_bytes = b""
 camera_lock = threading.Lock()
@@ -90,14 +85,7 @@ recording_state: dict[str, Any] = {
     "started_at": "",
     "updated_at": "",
     "message": "",
-    "max_frames": 0,
-    "record_mode": RECORD_MODE,
-    "rtsp_url": RTSP_URL,
-    "segments": [],
 }
-armed_recording: dict[str, Any] | None = None
-_rtsp_preview_thread: threading.Thread | None = None
-_rtsp_preview_stop = threading.Event()
 
 
 class AviMjpegWriter:
@@ -337,126 +325,6 @@ class FfmpegMp4Writer:
             raise RuntimeError("mp4 file was not created")
 
 
-class FfmpegRtspRecorder:
-    """Pull RTSP and remux to one continuous MP4 (or optional segments) without re-encoding."""
-
-    def __init__(self, path_pattern: Path, *, rtsp_url: str, segment_seconds: int) -> None:
-        self.path_pattern = path_pattern
-        self.rtsp_url = rtsp_url
-        self.segment_seconds = max(0, int(segment_seconds))
-        self.continuous = self.segment_seconds <= 0
-        self.frame_count = 0
-        ffmpeg_bin = _ffmpeg_binary()
-        if not ffmpeg_bin:
-            raise RuntimeError("ffmpeg not found")
-        if not rtsp_url:
-            raise RuntimeError("CAMERA_RTSP_URL is empty")
-
-        stem = path_pattern.stem
-        self._stem = stem
-        if self.continuous:
-            # One continuous file: camera-SESSION.mp4
-            self._out_path = path_pattern if path_pattern.suffix.lower() == ".mp4" else path_pattern.with_suffix(".mp4")
-            self._pattern = str(self._out_path)
-            cmd = [
-                ffmpeg_bin,
-                "-y",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-rtsp_transport",
-                RTSP_TRANSPORT,
-                "-i",
-                rtsp_url,
-                "-an",
-                "-c",
-                "copy",
-                "-f",
-                "mp4",
-                "-movflags",
-                "+frag_keyframe+empty_moov+default_base_moof",
-                str(self._out_path),
-            ]
-        else:
-            out_pattern = str(path_pattern.parent / f"{stem}-%03d.mp4")
-            self._out_path = None
-            self._pattern = out_pattern
-            cmd = [
-                ffmpeg_bin,
-                "-y",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-rtsp_transport",
-                RTSP_TRANSPORT,
-                "-i",
-                rtsp_url,
-                "-an",
-                "-c",
-                "copy",
-                "-f",
-                "segment",
-                "-segment_time",
-                str(max(30, self.segment_seconds)),
-                "-reset_timestamps",
-                "1",
-                "-strftime",
-                "0",
-                out_pattern,
-            ]
-        self.proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        sleep(0.4)
-        if self.proc.poll() is not None:
-            stderr = ""
-            if self.proc.stderr is not None:
-                stderr = self.proc.stderr.read().decode("utf-8", errors="replace").strip()
-            raise RuntimeError(stderr or "RTSP recorder exited immediately (스트림 연결 실패)")
-
-    def write(self, jpeg_bytes: bytes) -> None:
-        # RTSP mode ignores JPEG frames; keep API compatible.
-        if self.proc.poll() is not None:
-            stderr = ""
-            if self.proc.stderr is not None:
-                stderr = self.proc.stderr.read().decode("utf-8", errors="replace").strip()
-            raise RuntimeError(stderr or "RTSP recorder stopped")
-        self.frame_count += 1
-
-    def list_segments(self) -> list[Path]:
-        if self.continuous:
-            if self._out_path and self._out_path.exists() and self._out_path.stat().st_size > 0:
-                return [self._out_path]
-            return []
-        parent = self.path_pattern.parent
-        return sorted(parent.glob(f"{self._stem}-*.mp4"))
-
-    def release(self) -> None:
-        stderr_text = ""
-        if self.proc.poll() is None:
-            with suppress(Exception):
-                self.proc.send_signal(signal.SIGINT)
-            try:
-                return_code = self.proc.wait(timeout=max(30, min(180, FFMPEG_FINALIZE_TIMEOUT_SEC)))
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-                raise RuntimeError("RTSP recorder finalize timed out")
-        else:
-            return_code = self.proc.returncode or 0
-        if self.proc.stderr is not None:
-            with suppress(Exception):
-                stderr_text = self.proc.stderr.read().decode("utf-8", errors="replace").strip()
-        segments = self.list_segments()
-        # ffmpeg often exits 255 on SIGINT after a clean flush
-        if not segments and return_code not in (0, 255):
-            raise RuntimeError(stderr_text or f"RTSP recorder exited with code {return_code}")
-        if not segments:
-            raise RuntimeError(stderr_text or "RTSP 녹화 파일이 생성되지 않았습니다. Pi 송출을 확인하세요.")
-
-
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value or default)
@@ -688,16 +556,17 @@ def _unique_recording_path(filename: str, ext: str) -> Path:
 
 def _record_frame(frame_bytes: bytes, width: int, height: int) -> bool:
     global recording_writer
-    hit_frame_limit = False
     with recording_lock:
         if not recording_state["active"] or recording_writer is None:
             return False
         frames_written = int(recording_state.get("frames_written", 0) or 0)
-        session_limit = int(recording_state.get("max_frames") or 0)
-        effective_limit = session_limit if session_limit > 0 else MAX_RECORD_FRAMES
-        if effective_limit > 0 and frames_written >= effective_limit:
-            hit_frame_limit = True
+        if frames_written >= MAX_RECORD_FRAMES:
+            recording_state["message"] = f"녹화 프레임 상한({MAX_RECORD_FRAMES})에 도달해 중지합니다."
+            writer = recording_writer
+            recording_writer = None
+            recording_state["active"] = False
         else:
+            writer = None
             try:
                 recording_writer.write(frame_bytes)
             except Exception as exc:
@@ -707,26 +576,19 @@ def _record_frame(frame_bytes: bytes, width: int, height: int) -> bool:
             recording_state["frames_written"] = frames_written + 1
             recording_state["bytes_written"] = int(recording_state["bytes_written"]) + len(frame_bytes)
             recording_state["updated_at"] = datetime.now(timezone.utc).isoformat()
-            ts_us = int(camera_state.get("stm_ts_us", 0) or 0)
-            ts_path = RECORDINGS_DIR / (Path(str(recording_state["filename"])).stem + "_frames.csv")
-            try:
-                with ts_path.open("a") as tsf:
-                    tsf.write(f"{frames_written},{ts_us}\n")
-            except OSError:
-                pass
             return True
 
-    if hit_frame_limit:
-        limit = int(recording_state.get("max_frames") or 0) or MAX_RECORD_FRAMES
-        stop_recording(f"녹화 프레임 상한({limit})에 도달해 중지합니다.")
-        print(f"[recording] stopped at frame limit {limit}")
+    if writer is not None:
+        try:
+            writer.release()
+        except Exception as exc:
+            print(f"[recording] finalize failed: {exc}")
+            recording_state["message"] = f"녹화 저장 실패: {exc}"
     return False
 
 
 def put_recording_frame(frame_bytes: bytes, width: int, height: int) -> None:
     if not recording_state["active"]:
-        return
-    if str(recording_state.get("record_mode") or "") == "rtsp":
         return
     _record_frame(frame_bytes, width, height)
 
@@ -735,6 +597,7 @@ def stop_recording(message: str = "") -> None:
     global recording_writer
     with recording_lock:
         writer = recording_writer
+        mode = str(recording_state.get("mode") or "")
         recording_writer = None
         recording_state["active"] = False
         recording_state["message"] = message
@@ -743,18 +606,6 @@ def stop_recording(message: str = "") -> None:
     if writer is not None:
         try:
             writer.release()
-            if isinstance(writer, FfmpegRtspRecorder):
-                segments = writer.list_segments()
-                total_bytes = sum(p.stat().st_size for p in segments if p.exists())
-                with recording_lock:
-                    recording_state["segments"] = [p.name for p in segments]
-                    recording_state["bytes_written"] = total_bytes
-                    recording_state["frames_written"] = max(
-                        int(recording_state.get("frames_written") or 0),
-                        len(segments),
-                    )
-                    if segments:
-                        recording_state["filename"] = segments[0].name
         except Exception as exc:
             print(f"[recording] finalize failed: {exc}")
             recording_state["message"] = f"녹화 저장 실패: {exc}"
@@ -769,7 +620,6 @@ def update_camera_state(
     source: str = "raspberry-pi",
     client_seq: int = 0,
     client_session: str = "",
-    stm_ts_us: int = 0,
 ) -> tuple[int, bool]:
     global camera_frame_bytes, last_camera_log_at
     if not frame_bytes:
@@ -800,21 +650,24 @@ def update_camera_state(
             camera_state["client_session"] = client_session
         camera_state["updated_at"] = now
         camera_state["bytes"] = len(frame_bytes)
-        camera_state["stm_ts_us"] = stm_ts_us
         seq = int(camera_state["seq"])
-
-    if not recording_state["active"]:
-        _try_start_armed_recording(frame_bytes, width, height)
 
     if recording_state["active"] and str(recording_state.get("capture_source") or "camera") != "hud":
         put_recording_frame(frame_bytes, width, height)
 
     log_now = monotonic()
-    if log_now - last_camera_log_at >= 5.0:
+    if log_now - last_camera_log_at >= 1.0:
         last_camera_log_at = log_now
         print(f"[camera] seq={seq} client_seq={client_seq} bytes={len(frame_bytes)} source={safe_source}")
 
     return seq, True
+
+
+@app.on_event("startup")
+async def camera_startup_event() -> None:
+    deleted = cleanup_recordings()
+    if deleted:
+        print(f"[camera] startup cleanup removed {len(deleted)} recording file(s)")
 
 
 @app.get("/")
@@ -824,7 +677,6 @@ def home(request: Request):
         name="camera.html",
         context={
             "telemetry_poll_ms": max(50, TELEMETRY_POLL_MS),
-            "preview_poll_ms": max(100, CAMERA_PREVIEW_POLL_MS),
             "nav_compact": True,
             **nav_context("camera", request),
         },
@@ -835,109 +687,16 @@ def home(request: Request):
     )
 
 
-@app.on_event("startup")
-def camera_startup() -> None:
-    deleted = cleanup_recordings()
-    if deleted:
-        print(f"[recording] startup cleanup removed {len(deleted)} file(s)")
-    print(
-        f"[camera] record_mode={RECORD_MODE} rtsp={RTSP_URL} "
-        f"segment={RTSP_SEGMENT_SECONDS}s preview={RTSP_PREVIEW_ENABLED}"
-    )
-    _ensure_rtsp_preview_thread()
-
-
-def _grab_rtsp_preview_once() -> bool:
-    ffmpeg_bin = _ffmpeg_binary()
-    if not ffmpeg_bin or not RTSP_URL:
-        return False
-    out = RECORDINGS_DIR / ".rtsp_preview.jpg"
-    cmd = [
-        ffmpeg_bin,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-rtsp_transport",
-        RTSP_TRANSPORT,
-        "-i",
-        RTSP_URL,
-        "-frames:v",
-        "1",
-        "-q:v",
-        "5",
-        "-y",
-        str(out),
-    ]
-    try:
-        subprocess.run(cmd, check=False, timeout=8, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        return False
-    if not out.is_file() or out.stat().st_size <= 0:
-        return False
-    frame_bytes = out.read_bytes()
-    width, height = _jpeg_dimensions(frame_bytes)
-    update_camera_state(
-        frame_bytes,
-        mime="image/jpeg",
-        width=width,
-        height=height,
-        source="rtsp-preview",
-    )
-    with suppress(OSError):
-        out.unlink()
-    return True
-
-
-def _rtsp_preview_loop() -> None:
-    while not _rtsp_preview_stop.is_set():
-        # Health-check active RTSP recorder
-        writer = recording_writer
-        if (
-            recording_state.get("active")
-            and str(recording_state.get("record_mode") or "") == "rtsp"
-            and writer is not None
-            and getattr(writer, "proc", None) is not None
-            and writer.proc.poll() is not None
-        ):
-            stop_recording("RTSP 녹화 프로세스가 종료되었습니다. 스트림 연결을 확인하세요.")
-        if RTSP_PREVIEW_ENABLED and RECORD_MODE == "rtsp":
-            _grab_rtsp_preview_once()
-        _rtsp_preview_stop.wait(max(0.3, RTSP_PREVIEW_INTERVAL_SEC))
-
-
-def _ensure_rtsp_preview_thread() -> None:
-    global _rtsp_preview_thread
-    if RECORD_MODE != "rtsp":
-        return
-    if _rtsp_preview_thread and _rtsp_preview_thread.is_alive():
-        return
-    _rtsp_preview_stop.clear()
-    _rtsp_preview_thread = threading.Thread(target=_rtsp_preview_loop, name="rtsp-preview", daemon=True)
-    _rtsp_preview_thread.start()
-
-
 @app.get("/api/telemetry/snapshot")
 def telemetry_snapshot() -> dict[str, Any]:
-    if not LOGGER_SNAPSHOT_URL:
-        return {
-            "ok": False,
-            "speed": 0,
-            "accel_x": 0,
-            "accel_y": 0,
-            "accel_z": 0,
-            "core_temp": 0,
-            "device": "-",
-            "updated_at": "",
-            "system": {},
-        }
     try:
         req = urllib.request.Request(LOGGER_SNAPSHOT_URL, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=1.5) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         if isinstance(payload, dict):
             return payload
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
-        pass
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError) as exc:
+        print(f"[telemetry] snapshot fetch failed: {exc} url={LOGGER_SNAPSHOT_URL}")
     return {
         "ok": False,
         "speed": 0,
@@ -948,6 +707,26 @@ def telemetry_snapshot() -> dict[str, Any]:
         "device": "-",
         "updated_at": "",
         "system": {},
+    }
+
+
+@app.get("/api/offset/status")
+def offset_status() -> dict[str, Any]:
+    try:
+        req = urllib.request.Request(LOGGER_OFFSET_URL, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if isinstance(data, dict):
+            return data
+    except Exception as exc:
+        print(f"[offset] status fetch failed: {exc} url={LOGGER_OFFSET_URL}")
+
+    from offset_shared import public_offset_status
+
+    return {
+        "ok": False,
+        "message": "logger offset status unavailable",
+        **public_offset_status({}),
     }
 
 
@@ -967,8 +746,6 @@ async def camera_frame(request: Request) -> Any:
             source=request.headers.get("x-device") or request.headers.get("x-source") or "raspberry-pi",
             client_seq=_safe_int(request.headers.get("x-frame-seq")),
             client_session=str(request.headers.get("x-frame-session") or ""),
-            stm_ts_us=_safe_int(request.headers.get("x-frame-stm-ts-us")),
-
         )
         return Response(status_code=204)
 
@@ -993,7 +770,6 @@ async def camera_frame(request: Request) -> Any:
         source=str(body.get("source", "") or body.get("device", "") or "raspberry-pi"),
         client_seq=_safe_int(body.get("seq")),
         client_session=str(body.get("session") or ""),
-        stm_ts_us=_safe_int(request.headers.get("x-frame-stm-ts-us")),
     )
     return Response(status_code=204)
 
@@ -1064,28 +840,12 @@ async def camera_stream_mjpeg():
 @app.get("/api/recording/status")
 def recording_status() -> dict[str, Any]:
     with recording_lock:
-        armed = dict(armed_recording) if armed_recording else None
-        writer = recording_writer
-        segments: list[str] = list(recording_state.get("segments") or [])
-        if recording_state.get("active") and isinstance(writer, FfmpegRtspRecorder):
-            segments = [p.name for p in writer.list_segments()]
-            recording_state["segments"] = segments
-            recording_state["bytes_written"] = sum(
-                (RECORDINGS_DIR / name).stat().st_size
-                for name in segments
-                if (RECORDINGS_DIR / name).exists()
-            )
         return {
             "ok": True,
             **recording_state,
-            "armed": armed is not None,
-            "armed_session_id": str((armed or {}).get("session_id") or ""),
             "ffmpeg_available": _ffmpeg_available(),
             "ffmpeg_path": _ffmpeg_binary(),
             "record_format": _effective_record_format(),
-            "record_mode_config": RECORD_MODE,
-            "rtsp_url_config": RTSP_URL,
-            "rtsp_segment_seconds": RTSP_SEGMENT_SECONDS,
             "recent_files": list_recordings(),
             "storage_bytes": recording_storage_bytes(),
             "max_storage_bytes": MAX_RECORDING_BYTES,
@@ -1102,46 +862,36 @@ def _normalize_capture_source(value: Any) -> str:
     return "camera"
 
 
-def _start_recording_core(
-    body: dict[str, Any],
-    *,
-    frame_bytes: bytes = b"",
-    snapshot: dict[str, Any] | None = None,
-    default_width: int = 0,
-    default_height: int = 0,
-) -> dict[str, Any]:
+@app.post("/api/recording/start")
+async def recording_start(request: Request) -> dict[str, Any]:
     global recording_writer
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    with recording_lock:
+        if recording_state["active"]:
+            return {"ok": False, "message": "recording already active", **recording_state}
+
     capture_source = _normalize_capture_source(body.get("capture"))
-    use_rtsp = RECORD_MODE == "rtsp" and capture_source == "camera"
-    rtsp_url = str(body.get("rtsp_url") or RTSP_URL).strip()
+    frame_bytes = b""
+    snapshot: dict[str, Any] = {}
 
     if capture_source == "hud":
         width = max(320, min(3840, _safe_int(body.get("width"), 1280)))
         height = max(240, min(2160, _safe_int(body.get("height"), 720)))
-        use_rtsp = False
-    elif use_rtsp:
-        width = max(0, _safe_int(body.get("width"), default_width))
-        height = max(0, _safe_int(body.get("height"), default_height))
-        # RTSP does not need a JPEG frame to start.
-        if not rtsp_url:
-            return {"ok": False, "message": "CAMERA_RTSP_URL이 비어 있습니다."}
     else:
-        if not frame_bytes:
-            frame_bytes, snapshot = latest_camera_bytes()
-        snapshot = snapshot or {}
-        width = _safe_int(body.get("width"), _safe_int(snapshot.get("width"), default_width))
-        height = _safe_int(body.get("height"), _safe_int(snapshot.get("height"), default_height))
-        if (width <= 0 or height <= 0) and frame_bytes:
-            width, height = _jpeg_dimensions(frame_bytes)
+        frame_bytes, snapshot = latest_camera_bytes()
         if not frame_bytes:
             return {"ok": False, "message": "no camera frame has been received yet"}
 
-    fps = max(1.0, min(60.0, _safe_float(body.get("fps"), DEFAULT_RECORD_FPS)))
-    max_frames = max(0, _safe_int(body.get("max_frames"), 0))
-    started_at = datetime.now(timezone.utc)
-    session_id = str(body.get("session_id") or "").strip() or started_at.strftime("%Y%m%dT%H%M%SZ")
+        width = _safe_int(body.get("width"), _safe_int(snapshot.get("width")))
+        height = _safe_int(body.get("height"), _safe_int(snapshot.get("height")))
+        if width <= 0 or height <= 0:
+            width, height = _jpeg_dimensions(frame_bytes)
 
-    if not use_rtsp and (width <= 0 or height <= 0):
+    fps = max(1.0, min(60.0, _safe_float(body.get("fps"), DEFAULT_RECORD_FPS)))
+    started_at = datetime.now(timezone.utc)
+    session_id = started_at.strftime("%Y%m%dT%H%M%SZ")
+
+    if width <= 0 or height <= 0:
         return {"ok": False, "message": "프레임 크기를 아직 알 수 없어 녹화를 시작할 수 없습니다."}
 
     disk_ok, disk_stats = _disk_free_ok(RECORDINGS_DIR)
@@ -1161,14 +911,14 @@ def _start_recording_core(
             "disk": disk_stats,
         }
 
-    record_format = "mp4" if use_rtsp else _normalize_record_format(str(body.get("format") or _effective_record_format()))
+    record_format = _normalize_record_format(str(body.get("format") or _effective_record_format()))
     if record_format not in {"mp4", "avi"}:
         record_format = _effective_record_format()
 
-    if (use_rtsp or record_format == "mp4") and not _ffmpeg_available():
+    if record_format == "mp4" and not _ffmpeg_available():
         return {
             "ok": False,
-            "message": "ffmpeg가 없습니다. bash /home/ubuntu/install_ffmpeg.sh 실행 후 재시작하세요.",
+            "message": "ffmpeg가 없습니다. EC2에서 sever/install_ffmpeg.sh 실행 후 camera_server를 재시작하세요.",
             "ffmpeg_available": False,
         }
 
@@ -1176,13 +926,7 @@ def _start_recording_core(
     default_prefix = "hud" if capture_source == "hud" else "camera"
     target = _unique_recording_path(str(body.get("filename") or f"{default_prefix}-{session_id}{file_ext}"), file_ext)
     try:
-        if use_rtsp:
-            writer = FfmpegRtspRecorder(
-                target,
-                rtsp_url=rtsp_url,
-                segment_seconds=_safe_int(body.get("segment_seconds"), RTSP_SEGMENT_SECONDS),
-            )
-        elif record_format == "mp4":
+        if record_format == "mp4":
             writer = FfmpegMp4Writer(target, fps)
         else:
             writer = AviMjpegWriter(target, width, height, fps)
@@ -1194,18 +938,13 @@ def _start_recording_core(
         return {"ok": False, "message": f"녹화 파일 생성 실패: {exc}"}
 
     with recording_lock:
-        if recording_state["active"]:
-            if target.exists():
-                with suppress(OSError):
-                    target.unlink()
-            return {"ok": False, "message": "recording already active", **recording_state}
         recording_writer = writer
         recording_state.update(
             {
                 "active": True,
                 "session_id": session_id,
                 "filename": target.name,
-                "mode": "rtsp-mp4" if use_rtsp else record_format,
+                "mode": record_format,
                 "mime": "video/mp4" if record_format == "mp4" else "video/x-msvideo",
                 "capture_source": capture_source,
                 "frames_written": 0,
@@ -1215,19 +954,11 @@ def _start_recording_core(
                 "height": height,
                 "started_at": started_at.isoformat(),
                 "updated_at": started_at.isoformat(),
-                "message": (
-                    "HUD 녹화를 시작했습니다."
-                    if capture_source == "hud"
-                    else ("RTSP 녹화를 시작했습니다." if use_rtsp else "녹화를 시작했습니다.")
-                ),
-                "max_frames": 0 if use_rtsp else max_frames,
-                "record_mode": "rtsp" if use_rtsp else "http-jpeg",
-                "rtsp_url": rtsp_url if use_rtsp else "",
-                "segments": [],
+                "message": "HUD 녹화를 시작했습니다." if capture_source == "hud" else "녹화를 시작했습니다.",
             }
         )
 
-    if capture_source == "camera" and not use_rtsp:
+    if capture_source == "camera":
         if not _record_frame(frame_bytes, width, height):
             stop_recording("첫 프레임 저장에 실패했습니다.")
             if target.exists():
@@ -1236,92 +967,10 @@ def _start_recording_core(
             return {"ok": False, "message": recording_state.get("message", "첫 프레임 저장 실패")}
 
     print(
-        f"[recording] started mode={'rtsp' if use_rtsp else record_format} "
-        f"file={target} size={width}x{height} fps={fps:g} capture={capture_source}"
-        + (f" rtsp={rtsp_url}" if use_rtsp else "")
+        f"[recording] started file={target} size={width}x{height} fps={fps:g} "
+        f"format={record_format} capture={capture_source}"
     )
     return {"ok": True, **recording_state, "download_url": f"{PUBLIC_BASE_URL}/api/recordings/{target.name}"}
-
-
-def _try_start_armed_recording(frame_bytes: bytes, width: int, height: int) -> dict[str, Any] | None:
-    global armed_recording
-    with recording_lock:
-        if recording_state["active"] or not armed_recording:
-            return None
-        body = dict(armed_recording)
-
-    result = _start_recording_core(
-        body,
-        frame_bytes=frame_bytes,
-        default_width=width,
-        default_height=height,
-    )
-    if result.get("ok"):
-        with recording_lock:
-            armed_recording = None
-    return result
-
-
-@app.post("/api/recording/start")
-async def recording_start(request: Request) -> dict[str, Any]:
-    global armed_recording
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-    with recording_lock:
-        if recording_state["active"]:
-            return {"ok": False, "message": "recording already active", **recording_state}
-        armed_recording = None
-
-    return _start_recording_core(body)
-
-
-@app.post("/api/recording/arm")
-async def recording_arm(request: Request) -> dict[str, Any]:
-    global armed_recording
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-    with recording_lock:
-        if recording_state["active"]:
-            return {"ok": True, "already_active": True, **recording_state}
-
-    # RTSP mode can start without waiting for HTTP JPEG frames.
-    if RECORD_MODE == "rtsp":
-        result = _start_recording_core(body)
-        if result.get("ok"):
-            with recording_lock:
-                armed_recording = None
-            return result
-        return {**result, "armed": False}
-
-    frame_bytes, snapshot = latest_camera_bytes()
-    if frame_bytes:
-        result = _start_recording_core(body, frame_bytes=frame_bytes, snapshot=snapshot)
-        if result.get("ok"):
-            with recording_lock:
-                armed_recording = None
-            return result
-
-    with recording_lock:
-        armed_recording = {
-            "session_id": str(body.get("session_id") or ""),
-            "filename": str(body.get("filename") or ""),
-            "fps": body.get("fps"),
-            "format": body.get("format"),
-            "capture": body.get("capture", "camera"),
-            "max_frames": body.get("max_frames", 0),
-        }
-    return {
-        "ok": True,
-        "armed": True,
-        "session_id": str(body.get("session_id") or ""),
-        "message": "카메라 프레임 수신 시 녹화가 시작됩니다.",
-    }
-
-
-@app.post("/api/recording/disarm")
-def recording_disarm() -> dict[str, Any]:
-    global armed_recording
-    with recording_lock:
-        armed_recording = None
-    return {"ok": True, "armed": False}
 
 
 @app.post("/api/recording/frame")
@@ -1355,7 +1004,6 @@ def recording_stop() -> dict[str, Any]:
         if not recording_state["active"]:
             return {"ok": False, "message": "recording is not active", "recent_files": list_recordings()}
         filename = str(recording_state["filename"] or "")
-        mode = str(recording_state.get("record_mode") or "")
         finished = dict(recording_state)
 
     deadline = monotonic() + 0.5
@@ -1363,35 +1011,7 @@ def recording_stop() -> dict[str, Any]:
         sleep(0.02)
     stop_recording("녹화를 중지했습니다.")
 
-    with recording_lock:
-        finished = {**finished, **dict(recording_state)}
-    segments = list(finished.get("segments") or [])
     frames_written = int(finished.get("frames_written", 0) or 0)
-
-    if mode == "rtsp":
-        if not segments:
-            return {
-                "ok": False,
-                "message": "RTSP 녹화 파일이 없습니다. Pi가 MediaMTX로 송출 중인지 확인하세요.",
-                "recording": finished,
-                "recent_files": list_recordings(),
-            }
-        finished["filename"] = segments[0]
-        finished["file_size"] = int(finished.get("bytes_written") or 0)
-        finished["download_url"] = f"{PUBLIC_BASE_URL}/api/recordings/{segments[0]}"
-        finished["segment_urls"] = [f"{PUBLIC_BASE_URL}/api/recordings/{name}" for name in segments]
-        deleted = cleanup_recordings()
-        print(f"[recording] stopped rtsp files={len(segments)} bytes={finished['file_size']}")
-        return {
-            "ok": True,
-            "recording": finished,
-            "download_url": finished["download_url"],
-            "segments": segments,
-            "storage_bytes": recording_storage_bytes(),
-            "cleanup_deleted": deleted,
-            "recent_files": list_recordings(),
-        }
-
     if frames_written <= 0:
         target = RECORDINGS_DIR / Path(filename).name
         if target.exists():

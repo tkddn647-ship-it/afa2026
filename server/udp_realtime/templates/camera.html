@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>Camera HUD</title>
   <style>
     :root {
@@ -210,6 +212,20 @@
       border-color: rgba(248, 113, 113, 0.45);
       background: rgba(80, 20, 30, 0.45);
       color: #fecdd3;
+    }
+    .controls .chip {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #c8daf8;
+      background: var(--surface2);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    .controls .chip strong {
+      color: #eef4ff;
+      font-weight: 800;
     }
     .recordings-storage {
       margin: 0;
@@ -522,8 +538,11 @@
       <button id="stopButton" class="stop desktop-only" type="button" disabled>HUD 중지</button>
       <button id="toggleFiles" class="desktop-only" type="button">녹화 목록<span id="recordingsBadge"></span></button>
       <span id="storageChip" class="desktop-only">저장공간 확인 중...</span>
+      <span class="chip offset-chip desktop-only" id="offsetChip"><span>오프셋</span> <strong id="offsetStatus">없음</strong></span>
       <span id="status" class="desktop-only">로딩 중</span>
     </div>
+
+    {% include "partials/offset_status.html" %}
 
     <div class="stream-host">
       <img id="streamImage" alt="" draggable="false" decoding="async" class="stream-waiting">
@@ -589,14 +608,14 @@
 
   <script>
     const TELEMETRY_POLL_MS = {{ telemetry_poll_ms }};
-    const PREVIEW_POLL_MS = {{ preview_poll_ms }};
+    const HUD_UI_VERSION = '2026-07-07-jpeg-poll';
     const mobileView = window.matchMedia('(max-width: 768px)');
     let polling = false;
     let displayedSpeed = 0;
     let targetSpeed = 0;
     let lastStreamAt = 0;
-    let cameraFrameBusy = false;
     let cameraFrameTimer = null;
+    let cameraFrameBusy = false;
     let accelX = 0;
     let accelY = 0;
     const HUD_RECORD_WIDTH = 1280;
@@ -650,24 +669,35 @@
       }
     }
 
-    function startJpegPolling() {
+    function startCameraFeed() {
       if (cameraFrameTimer) clearInterval(cameraFrameTimer);
-      markStreamWaiting();
-      pollCameraFrame();
-      cameraFrameTimer = setInterval(pollCameraFrame, PREVIEW_POLL_MS);
-    }
-
-    function configureStreamMode() {
       const img = document.getElementById('streamImage');
       if (img.src && !img.dataset.blobUrl) {
         img.removeAttribute('src');
       }
+      markStreamWaiting();
+      pollCameraFrame();
+      const intervalMs = isMobileView() ? 350 : 200;
+      cameraFrameTimer = setInterval(pollCameraFrame, intervalMs);
+    }
+
+    function stopCameraFeed() {
+      if (cameraFrameTimer) {
+        clearInterval(cameraFrameTimer);
+        cameraFrameTimer = null;
+      }
+      const img = document.getElementById('streamImage');
       const blobUrl = img.dataset.blobUrl || '';
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
         delete img.dataset.blobUrl;
       }
-      startJpegPolling();
+      if (img.src) img.removeAttribute('src');
+    }
+
+    function configureStreamMode() {
+      stopCameraFeed();
+      startCameraFeed();
     }
 
     function setStatus(message) {
@@ -807,8 +837,15 @@
 
     async function refreshStatus() {
       try {
-        const res = await fetch('/api/recording/status', { cache: 'no-store' });
+        const [res, offsetRes] = await Promise.all([
+          fetch('/api/recording/status', { cache: 'no-store' }),
+          fetch('/api/offset/status', { cache: 'no-store' }),
+        ]);
         const data = await res.json();
+        const offset = await offsetRes.json();
+        if (typeof window.renderOffsetStatus === 'function') {
+          window.renderOffsetStatus(offset);
+        }
         const active = Boolean(data.active);
         const diskOk = data.disk_ok !== false;
         const ffmpegReady = data.ffmpeg_available !== false || data.record_format !== 'mp4';
@@ -825,6 +862,8 @@
           setStatus('MP4 준비 안 됨 — install_ffmpeg.sh 실행 필요');
         } else if (!polling) {
           setStatus('대기 중 · HUD 전체 화면 · ' + (data.record_format || 'mp4').toUpperCase());
+        } else {
+          setStatus('대기 중 · 카메라 연결됨');
         }
         renderRecordings(data.recent_files || []);
       } catch (err) {
@@ -1217,28 +1256,14 @@
       }
     }
 
-    async function pollCamera() {
-      try {
-        const data = await fetch('/api/camera/latest', { cache: 'no-store' }).then((r) => r.json());
-        if (data.seq > 0 && data.updated_at) {
-          markStreamLive();
-        }
-      } catch (err) {}
-      if (!lastStreamAt || Date.now() - lastStreamAt > 3000) {
-        markStreamWaiting();
-      }
-    }
-
     drawAccel();
     animateSpeed();
     configureStreamMode();
     mobileView.addEventListener('change', configureStreamMode);
     refreshStatus();
     pollTelemetry();
-    pollCamera();
     setInterval(() => { polling = true; refreshStatus(); }, 2000);
     setInterval(pollTelemetry, TELEMETRY_POLL_MS);
-    setInterval(pollCamera, Math.max(500, PREVIEW_POLL_MS * 2));
   </script>
 </body>
 </html>
