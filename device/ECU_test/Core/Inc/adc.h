@@ -38,15 +38,20 @@ extern ADC_HandleTypeDef hadc1;
 
 #define ADC_LINEAR_SENSOR_COUNT  4U
 #define ADC_LINEAR_STROKE_MM     100.0f
-#define ADC_VREF_MV              3300U
+/* 풀 스트로크(100mm) 캘리: vmax = vmax_old × (측정mm / 100) */
+#define ADC_LINEAR_VMAX_FR_MV    1825U  /* FR 풀: 91.3mm → 1999×0.913 */
+#define ADC_LINEAR_VMAX_RR_MV    1835U  /* RR 풀: 88.6mm → 2071×0.886 */
+#define ADC_LINEAR_VMAX_RL_MV    1827U  /* RL 풀: 88.3mm → 2069×0.883 */
+#define ADC_LINEAR_VMAX_FL_MV    1818U  /* FL 풀: 88.2mm → 2061×0.882 */
+#define ADC_VREF_MV              3300U  /* STM32 ADC 기준 (VDDA) */
 #define ADC_MAX_RAW              4095U
 
 typedef enum
 {
   ADC_LINEAR_CH0 = 0, /* PA1 / ADC1_IN1 -> FR */
-  ADC_LINEAR_CH1 = 1, /* PA2 / ADC1_IN2 -> FL */
-  ADC_LINEAR_CH2 = 2, /* PA3 / ADC1_IN3 -> RR */
-  ADC_LINEAR_CH3 = 3  /* PA4 / ADC1_IN4 -> RL */
+  ADC_LINEAR_CH1 = 1, /* PA2 / ADC1_IN2 -> RR */
+  ADC_LINEAR_CH2 = 2, /* PA3 / ADC1_IN3 -> RL */
+  ADC_LINEAR_CH3 = 3  /* PA4 / ADC1_IN4 -> FL */
 } ADC_LinearChannel_t;
 
 typedef struct
@@ -72,7 +77,7 @@ void MX_ADC1_Init(void);
 void ADC_LinearSensor_Init(void);
 uint16_t ADC_ReadRaw(ADC_LinearChannel_t channel);
 uint16_t ADC_RawToVoltageMv(uint16_t raw);
-float ADC_RawToPositionMm(uint16_t raw);
+float ADC_RawToPositionMm(ADC_LinearChannel_t channel, uint16_t raw);
 void ADC_ReadLinearSensor(ADC_LinearChannel_t channel, volatile ADC_LinearReading_t *reading);
 void ADC_ReadAllLinearSensors(void);
 float ADC_ReadMcuTempC(void); /* STM32 칩 내부(다이) 온도 °C, VREFINT 보정 */

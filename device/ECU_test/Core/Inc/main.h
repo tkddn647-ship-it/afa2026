@@ -57,6 +57,12 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define BMS_FAULT_Pin GPIO_PIN_2
+#define BMS_FAULT_GPIO_Port GPIOE
+#define IMD_FALUT_Pin GPIO_PIN_3
+#define IMD_FALUT_GPIO_Port GPIOE
+#define BSPD_FALUT_Pin GPIO_PIN_4
+#define BSPD_FALUT_GPIO_Port GPIOE
 #define Raspberry_pi_5_to_RX_Pin GPIO_PIN_10
 #define Raspberry_pi_5_to_RX_GPIO_Port GPIOC
 #define Raspberry_pi_5_to_TX_Pin GPIO_PIN_11
@@ -65,6 +71,10 @@ void Error_Handler(void);
 #define Uno_to_RX_GPIO_Port GPIOD
 #define Uno_to_TX_Pin GPIO_PIN_6
 #define Uno_to_TX_GPIO_Port GPIOD
+#define HV_ACTIVE_Pin GPIO_PIN_0
+#define HV_ACTIVE_GPIO_Port GPIOE
+#define RTD_ACTIVE_Pin GPIO_PIN_1
+#define RTD_ACTIVE_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
 #define LIS3DSH_CS_Pin GPIO_PIN_3

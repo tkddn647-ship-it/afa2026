@@ -62,7 +62,7 @@ DEFAULT_INGEST_URL = os.getenv("INGEST_URL", "http://3.39.188.80:8000/ingest")
 DEFAULT_REALTIME_URL = os.getenv("REALTIME_URL", "").strip()
 DEFAULT_DEVICE = os.getenv("DEVICE", "raspberry-pi-stm")
 DEFAULT_UART_PORT_ENV = os.getenv("UART_PORT", DEFAULT_UART_PORT)
-SCRIPT_VERSION = "2026-06-24-lws-steering"
+SCRIPT_VERSION = "2026-07-16-can"
 STATUS_INTERVAL_S = 2.0
 UART_OPEN_RETRY_S = 5.0
 UART_RECONNECT_S = 3.0
@@ -76,6 +76,27 @@ def sample_to_server_dict(sample: dict[str, Any]) -> dict[str, Any]:
     mcu_temp = round(float(sample.get("ecu_temp", 0)), 1)
     steer_angle = round(float(sample.get("steering_angle", 0)), 1)
     steer_speed = round(float(sample.get("steering_speed", 0)), 0)
+
+    inv_igt = round(float(sample.get("inv_temp_igt", 0)), 1)
+    inv_motor_temp = round(float(sample.get("inv_temp_motor", 0)), 1)
+    inv_speed = round(float(sample.get("inv_motor_speed", 0)), 0)
+    inv_dc_i = round(float(sample.get("inv_dc_current", 0)), 1)
+    inv_vdc = round(float(sample.get("inv_voltage", 0)), 1)
+    inv_shudder = round(float(sample.get("inv_shudder_torque", 0)), 1)
+    inv_id_fb = round(float(sample.get("inv_id_feedback", 0)), 1)
+    inv_iq_fb = round(float(sample.get("inv_iq_feedback", 0)), 1)
+    inv_tq_cmd = round(float(sample.get("inv_torque_commanded", 0)), 1)
+    inv_tq_fb = round(float(sample.get("inv_torque_feedback", 0)), 1)
+    inv_id_cmd = round(float(sample.get("inv_id_command", 0)), 1)
+    inv_iq_cmd = round(float(sample.get("inv_iq_command", 0)), 1)
+
+    bms_charge = round(float(sample.get("bms_charge", 0)), 1)
+    bms_voltage = round(float(sample.get("bms_voltage", 0)), 1)
+    bms_current = round(float(sample.get("bms_current", 0)), 1)
+    bms_ccl = round(float(sample.get("bms_ccl", 0)), 0)
+    bms_dcl = round(float(sample.get("bms_dcl", 0)), 0)
+    bms_temp_max = round(float(sample.get("bms_temp_maxvalue", 0)), 1)
+    bms_capacity = round(float(sample.get("bms_capacity", 0)), 1)
 
     return {
         "t": int(stm_ms),
@@ -97,6 +118,62 @@ def sample_to_server_dict(sample: dict[str, Any]) -> dict[str, Any]:
             "y": round(float(sample["y_g"]), 3),
             "z": round(float(sample["z_g"]), 3),
         },
+        "motor_precharge": int(float(sample.get("motor_precharge", 0))),
+        "motor_main_contactor": int(float(sample.get("motor_main_contactor", 0))),
+        "motor_inverter_mode": int(float(sample.get("motor_inverter_mode", 0))),
+        "inverter": {
+            "temperature": {
+                "igbt": {"max": {"temperature": inv_igt}},
+                "motor": inv_motor_temp,
+            },
+            "motor": {
+                "speed": inv_speed,
+            },
+            "current": {
+                "dc_bus": inv_dc_i,
+            },
+            "voltage": {
+                "dc_bus": inv_vdc,
+            },
+            "torque": {
+                "commanded": inv_tq_cmd,
+                "feedback": inv_tq_fb,
+                "shudder": inv_shudder,
+            },
+            "feedback": {
+                "id": inv_id_fb,
+                "iq": inv_iq_fb,
+            },
+            "command": {
+                "id": inv_id_cmd,
+                "iq": inv_iq_cmd,
+            },
+            "status": {
+                "precharge": int(float(sample.get("motor_precharge", 0))),
+                "main_contactor": int(float(sample.get("motor_main_contactor", 0))),
+                "mode": int(float(sample.get("motor_inverter_mode", 0))),
+                "inverter_mode": (
+                    "Speed" if int(float(sample.get("motor_inverter_mode", 0))) else "Torque"
+                ),
+            },
+        },
+        "bms": {
+            "charge": bms_charge,
+            "voltage": bms_voltage,
+            "current": bms_current,
+            "ccl": bms_ccl,
+            "dcl": bms_dcl,
+            "capacity": bms_capacity,
+            "temperature": {
+                "max": {"value": bms_temp_max},
+            },
+        },
+        "can": {
+            "can1": int(float(sample.get("can1", 0))),
+            "can2": int(float(sample.get("can2", 0))),
+        },
+        "can1": int(float(sample.get("can1", 0))),
+        "can2": int(float(sample.get("can2", 0))),
     }
 
 
@@ -199,7 +276,9 @@ def on_batch_factory(sender: BatchSender) -> Any:
                 f"[sent] n={len(batch)} total={sender.sent_samples} "
                 f"FR={last['FR']:.2f} x_g={last['x_g']:.3f} "
                 f"mcu={last.get('ecu_temp', 0):.1f}C "
-                f"steer={steer:.1f}°/{steer_spd:.0f}°/s"
+                f"steer={steer:.1f}°/{steer_spd:.0f}°/s "
+                f"inv_rpm={float(last.get('inv_motor_speed', 0)):.0f} "
+                f"bms={float(last.get('bms_voltage', 0)):.1f}V"
             )
 
     return on_batch

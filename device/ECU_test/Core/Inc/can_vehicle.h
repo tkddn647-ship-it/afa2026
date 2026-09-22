@@ -2,10 +2,7 @@
 /**
   ******************************************************************************
   * @file    can_vehicle.h
-  * @brief   CAN1 @ 250 kbps — BMS(HV) + Motor Controller 버스
-  *
-  * ID를 모를 때: g_can_sniff_slots[] / rx_total 로 스니핑
-  * ID 확정 후: 아래 CAN_*_STD_ID 매크로에 DBC 값 입력
+  * @brief   CAN1 @ 250 kbps — BMS(HV) + Cascadia Motion 인버터 버스
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -23,62 +20,106 @@ extern "C" {
 #define CAN_VEHICLE_BITRATE_KBPS  250U
 #define CAN_SNIFF_SLOT_COUNT      16U
 
-/*
- * Orion BMS Utility → Export DBC 에서 확인한 Standard ID (0 = 미사용)
- * 작년 HV 화면: V,A,R,B,I,T,P + 잔량/용량/전압/전류/DCL/최고온도
- */
-#define CAN_BMS_FAILSAFE_STD_ID     0x000U
-#define CAN_BMS_TELEMETRY_STD_ID    0x000U
+/* Cascadia Motion (CAN Protocol V5_9) */
+#define CAN_INV_TEMP_IGBT_STD_ID    0x0A0U
+#define CAN_INV_TEMP_MOTOR_STD_ID   0x0A2U /* + Torque Shudder @ B6-7 */
+#define CAN_INV_MOTOR_STD_ID        0x0A5U
+#define CAN_INV_CURRENT_STD_ID      0x0A6U
+#define CAN_INV_VOLTAGE_STD_ID      0x0A7U
+#define CAN_INV_FLUX_STD_ID         0x0A8U /* Id/Iq feedback */
+#define CAN_INV_STATUS_STD_ID       0x0AAU
+#define CAN_INV_TORQUE_STD_ID       0x0ACU /* Commanded / Feedback torque */
+#define CAN_INV_IDIQ_CMD_STD_ID     0x0ADU /* Id/Iq command */
+#define CAN_INV_LIMITS_STD_ID       0x202U
 
 /*
- * Motor 화면: Precharge / Main contactor / Inverter mode + RPM/토크/온도
+ * Orion BMS Utility 커스텀 (Big Endian, Math ×1):
+ * 0x81: Amphours / Open V / Current / Failsafe
+ * 0x82: High/Low temp+id / DCL / CCL
  */
-#define CAN_MC_STATUS_STD_ID        0x000U
-#define CAN_MC_TELEMETRY_STD_ID     0x000U
+#define CAN_BMS_PACK_STD_ID         0x081U
+#define CAN_BMS_LIMITS_STD_ID       0x082U
+#define CAN_BMS_FAILSAFE_STD_ID     0x000U
 
 typedef struct
 {
-  /* Orion Failsafe Status word (bit0..6) — ID 확정 시 파싱 */
-  uint8_t voltage_failsafe;       /* V */
-  uint8_t current_failsafe;       /* A */
-  uint8_t relay_failsafe;         /* R */
-  uint8_t cell_balancing;         /* B */
-  uint8_t interlock_failsafe;     /* I */
-  uint8_t thermistor_error;       /* T */
-  uint8_t input_power_failsafe;   /* P */
+  uint8_t voltage_failsafe;
+  uint8_t current_failsafe;
+  uint8_t relay_failsafe;
+  uint8_t cell_balancing;
+  uint8_t interlock_failsafe;
+  uint8_t thermistor_error;
+  uint8_t input_power_failsafe;
   uint16_t failsafe_raw;
 
-  float soc_pct;           /* 잔량 % */
-  float capacity_ah;       /* 용량 Ah */
-  float pack_voltage_v;    /* 전압 V */
-  float pack_current_a;    /* 전류 A */
-  float discharge_limit_a; /* DCL A */
-  float temp_high_c;       /* 최고 온도 °C */
-  uint8_t temp_high_id;    /* 최고 온도 셀/써미스터 # */
+  float soc_pct;
+  float capacity_ah;
+  float pack_voltage_v;
+  float pack_current_a;
+  float charge_limit_a;
+  float discharge_limit_a;
+  float temp_high_c;
+  uint8_t temp_high_id;
+  float temp_low_c;
+  uint8_t temp_low_id;
+  float temp_internal_c;
 
   uint32_t failsafe_rx_count;
-  uint32_t telemetry_rx_count;
+  uint32_t pack_rx_count;
+  uint32_t limits_rx_count;
   uint32_t last_failsafe_ms;
-  uint32_t last_telemetry_ms;
+  uint32_t last_pack_ms;
+  uint32_t last_limits_ms;
 } CanBmsHvState_t;
 
 typedef struct
 {
+  float igbt_a_c;
+  float igbt_b_c;
+  float igbt_c_c;
+  float gate_driver_c;
+  float coolant_c;
+  float hotspot_c;
+  float motor_temp_c;
+  float shudder_torque_nm;
+
+  float motor_angle_deg;
+  float rpm;
+  float electrical_freq_hz;
+
+  float phase_a_a;
+  float phase_b_a;
+  float phase_c_a;
+  float dc_bus_current_a;
+
+  float dc_bus_voltage_v;
+  float output_voltage_v;
+
+  float id_feedback_a;
+  float iq_feedback_a;
+  float id_command_a;
+  float iq_command_a;
+  float torque_commanded_nm;
+  float torque_feedback_nm;
+
+  uint8_t vsm_state;
+  uint8_t inverter_state;
+  uint8_t inverter_enabled;
   uint8_t precharge_active;
   uint8_t main_contactor_closed;
-  uint8_t inverter_mode;     /* 인버터 모드 raw (DBC 정의 후 enum) */
-  uint16_t vsm_state;         /* VSM raw */
-  uint16_t inv_state;         /* INV raw */
+  uint8_t inverter_mode; /* Cascadia Run Mode: 0=Torque, 1=Speed */
 
-  float rpm;
-  float torque_nm;
-  float temp_motor_c;
-  float temp_igbt_c;
-
+  uint32_t temp_igbt_rx_count;
+  uint32_t temp_motor_rx_count;
+  uint32_t motor_rx_count;
+  uint32_t current_rx_count;
+  uint32_t voltage_rx_count;
+  uint32_t flux_rx_count;
+  uint32_t torque_rx_count;
+  uint32_t idiq_cmd_rx_count;
   uint32_t status_rx_count;
-  uint32_t telemetry_rx_count;
-  uint32_t last_status_ms;
-  uint32_t last_telemetry_ms;
+  uint32_t limits_rx_count;
+  uint32_t last_rx_ms;
 } CanMotorState_t;
 
 typedef struct
@@ -107,6 +148,8 @@ void CAN_Vehicle_Init(void);
 void CAN_Vehicle_Process(void);
 void CAN_Vehicle_GetState(CanVehicleState_t *out);
 const CanSniffSlot_t *CAN_Vehicle_GetSniffSlot(uint8_t index);
+
+float CAN_Vehicle_GetIgbtMaxC(void);
 
 #ifdef __cplusplus
 }

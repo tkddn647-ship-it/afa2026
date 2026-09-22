@@ -1,5 +1,5 @@
 """
-STM32(UART4, 460800) -> Raspberry Pi 5 GPIO UART 수신
+STM32(UART4, 921600) -> Raspberry Pi 5 GPIO UART 수신
 
 하드웨어 (40핀 GPIO):
   Pi Pin 8  (GPIO14 TXD) -> STM32 UART4 RX (PC11)
@@ -10,15 +10,19 @@ STM32(UART4, 460800) -> Raspberry Pi 5 GPIO UART 수신
   주의: Pi5 에서 /dev/serial0 은 ttyAMA10(보드 옆 3핀 UART)일 수 있음.
         GPIO 8/10 배선이면 반드시 /dev/ttyAMA0 사용.
 
-- 200 Hz: FR, FL, RR, RL, x_g, y_g, z_g + timestamp 를 data[] 에 적재
+- 100 Hz: FR, FL, RR, RL, x_g, y_g, z_g + timestamp 를 data[] 에 적재
 - 20 Hz(50 ms): data[] 를 배치로 넘긴 뒤 초기화
 
 STM32 한 줄 형식 (CSV, \\n 종료):
   FR,FL,RR,RL,x_g,y_g,z_g
-또는 STM32 타임스탬프(ms) + MCU 칩 내부 온도 + LWS 조향 포함:
-  stm_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed
-  ecu_temp = STM32 MCU 칩 내부(다이) 온도(°C)
-  steering_angle = Bosch LWS 조향각(°), steering_speed = 조향 속도(°/s)
+또는 STM32 타임스탬프(ms) + MCU 칩 내부 온도 + LWS 조향 + 핵심 CAN(BMS/인버터) 포함:
+  stm_ms,FR,FL,RR,RL,x_g,y_g,z_g,ecu_temp,steering_angle,steering_speed,
+  inv_temp_igt,inv_temp_motor,inv_motor_speed,inv_dc_current,inv_voltage,
+  motor_precharge,motor_main_contactor,motor_inverter_mode(0=Torque,1=Speed),
+  inv_shudder_torque,inv_id_feedback,inv_iq_feedback,
+  inv_torque_commanded,inv_torque_feedback,inv_id_command,inv_iq_command,
+  bms_charge,bms_voltage,bms_current,bms_ccl,bms_dcl,bms_temp_maxvalue,bms_capacity,
+  can1,can2
 """
 
 from __future__ import annotations
@@ -43,9 +47,9 @@ class UartOpenError(RuntimeError):
     """UART 포트를 열지 못했을 때 (자동 재시도용)."""
 
 
-DEFAULT_BAUD = 460800
+DEFAULT_BAUD = 921600
 DEFAULT_UART_PORT = "auto"
-UART_MODULE_VERSION = "2026-03-24-gpio4"
+UART_MODULE_VERSION = "2026-07-28-uart921k"
 
 # Pi5 GPIO Pin 8/10 (GPIO14/15). dtparam=uart0=on 필요.
 GPIO_UART_DEVICE = "/dev/ttyAMA0"
@@ -62,18 +66,63 @@ PI_UART_CANDIDATES = (
     "/dev/ttyACM0",
 )
 
-SAMPLE_RATE_HZ = 200
+SAMPLE_RATE_HZ = 100
 FLUSH_RATE_HZ = 20
 FLUSH_INTERVAL_S = 1.0 / FLUSH_RATE_HZ
-SAMPLES_PER_BATCH = SAMPLE_RATE_HZ // FLUSH_RATE_HZ  # 10
+SAMPLES_PER_BATCH = SAMPLE_RATE_HZ // FLUSH_RATE_HZ  # 5
 
 LINEAR_KEYS = ("FR", "FL", "RR", "RL")
 ACCEL_KEYS = ("x_g", "y_g", "z_g")
 ECU_TEMP_KEY = "ecu_temp"
 STEERING_KEYS = ("steering_angle", "steering_speed")
-SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,) + STEERING_KEYS
+CAN_INV_KEYS = (
+    "inv_temp_igt",
+    "inv_temp_motor",
+    "inv_motor_speed",
+    "inv_dc_current",
+    "inv_voltage",
+)
+CAN_MOTOR_STATUS_KEYS = (
+    "motor_precharge",
+    "motor_main_contactor",
+    "motor_inverter_mode",
+)
+CAN_INV_TORQUE_KEYS = (
+    "inv_shudder_torque",
+    "inv_id_feedback",
+    "inv_iq_feedback",
+    "inv_torque_commanded",
+    "inv_torque_feedback",
+    "inv_id_command",
+    "inv_iq_command",
+)
+CAN_BMS_KEYS = (
+    "bms_charge",
+    "bms_voltage",
+    "bms_current",
+    "bms_ccl",
+    "bms_dcl",
+    "bms_temp_maxvalue",
+    "bms_capacity",
+)
+CAN_LINK_KEYS = (
+    "can1",
+    "can2",
+)
+SENSOR_KEYS = (
+    LINEAR_KEYS
+    + ACCEL_KEYS
+    + (ECU_TEMP_KEY,)
+    + STEERING_KEYS
+    + CAN_INV_KEYS
+    + CAN_MOTOR_STATUS_KEYS
+    + CAN_INV_TORQUE_KEYS
+    + CAN_BMS_KEYS
+    + CAN_LINK_KEYS
+)
 LEGACY_SENSOR_KEYS = LINEAR_KEYS + ACCEL_KEYS
 SENSOR_KEYS_WITH_TEMP = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,)
+SENSOR_KEYS_WITH_STEERING = SENSOR_KEYS_WITH_TEMP + STEERING_KEYS
 BOOT_LINE_PREFIXES = ("STM_", "HB,", "LWS_CAL")
 
 # 수신 버퍼 (20 Hz 마다 초기화)
@@ -360,15 +409,10 @@ def parse_line(line: str) -> dict[str, Any] | None:
     else:
         values = parts
 
-    if len(values) == len(LEGACY_SENSOR_KEYS):
-        values = [*values, "0", "0", "0"]
-    elif len(values) == len(SENSOR_KEYS_WITH_TEMP):
-        values = [*values, "0", "0"]
+    if len(values) < len(SENSOR_KEYS):
+        values = [*values, *("0",) * (len(SENSOR_KEYS) - len(values))]
     elif len(values) > len(SENSOR_KEYS):
-        # STM 펌웨어가 끝에 추가 필드를 붙이는 경우 앞 10개만 사용
         values = values[: len(SENSOR_KEYS)]
-    elif len(values) != len(SENSOR_KEYS):
-        return None
 
     try:
         nums = [float(v) for v in values]
@@ -461,7 +505,7 @@ def read_loop(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="STM32 UART 센서 수신 (200 Hz / 20 Hz flush)")
+    parser = argparse.ArgumentParser(description="STM32 UART 센서 수신 (100 Hz / 20 Hz flush)")
     parser.add_argument(
         "--port",
         default=DEFAULT_UART_PORT,

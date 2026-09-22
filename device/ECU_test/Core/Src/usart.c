@@ -21,7 +21,7 @@
 #include "usart.h"
 
 /* USER CODE BEGIN 0 */
-
+DMA_HandleTypeDef hdma_uart4_tx;
 /* USER CODE END 0 */
 
 UART_HandleTypeDef huart4;
@@ -39,7 +39,7 @@ void MX_UART4_Init(void)
 
   /* USER CODE END UART4_Init 1 */
   huart4.Instance = UART4;
-  huart4.Init.BaudRate = 460800;
+  huart4.Init.BaudRate = 921600;
   huart4.Init.WordLength = UART_WORDLENGTH_8B;
   huart4.Init.StopBits = UART_STOPBITS_1;
   huart4.Init.Parity = UART_PARITY_NONE;
@@ -51,11 +51,7 @@ void MX_UART4_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN UART4_Init 2 */
-  {
-    static const uint8_t uart4_boot_msg[] = "STM_UART4_OK\n";
-    (void)HAL_UART_Transmit(&huart4, (uint8_t *)uart4_boot_msg,
-                            (uint16_t)(sizeof(uart4_boot_msg) - 1U), 100U);
-  }
+  /* Boot 문구는 SensorUart_Init → Uart4Tx(DMA) 경로에서 STM_READY 로 전송 */
   /* USER CODE END UART4_Init 2 */
 
 }
@@ -114,7 +110,25 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* USER CODE BEGIN UART4_MspInit 1 */
+    /* UART4_TX → DMA1 Stream4 Channel4 */
+    hdma_uart4_tx.Instance = DMA1_Stream4;
+    hdma_uart4_tx.Init.Channel = DMA_CHANNEL_4;
+    hdma_uart4_tx.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    hdma_uart4_tx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_uart4_tx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_uart4_tx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_uart4_tx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_uart4_tx.Init.Mode = DMA_NORMAL;
+    hdma_uart4_tx.Init.Priority = DMA_PRIORITY_MEDIUM;
+    hdma_uart4_tx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+    if (HAL_DMA_Init(&hdma_uart4_tx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    __HAL_LINKDMA(uartHandle, hdmatx, hdma_uart4_tx);
 
+    HAL_NVIC_SetPriority(UART4_IRQn, 1, 1);
+    HAL_NVIC_EnableIRQ(UART4_IRQn);
   /* USER CODE END UART4_MspInit 1 */
   }
   else if(uartHandle->Instance==USART2)
@@ -161,7 +175,8 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_DeInit(GPIOC, Raspberry_pi_5_to_RX_Pin|Raspberry_pi_5_to_TX_Pin);
 
   /* USER CODE BEGIN UART4_MspDeInit 1 */
-
+    HAL_NVIC_DisableIRQ(UART4_IRQn);
+    HAL_DMA_DeInit(uartHandle->hdmatx);
   /* USER CODE END UART4_MspDeInit 1 */
   }
   else if(uartHandle->Instance==USART2)

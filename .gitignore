@@ -1,6 +1,49 @@
+# Build / IDE
+**/Debug/
+**/*.o
+**/*.elf
+**/*.map
+**/*.list
+**/*.su
+**/*.cyclo
+**/*.d
+**/.settings/
+**/.mxproject
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+
+# Secrets / local env
+**/.env
+**/env.ingest
+**/stm_ingest.env
+!**/*.env.example
+
+# Shell history / OS junk
+**/.bash_history
+**/.bash_logout
+**/.bashrc
+**/.profile
+**/.lesshst
+**/.wget-hsts
+**/.sudo_as_admin_successful
+**/.DS_Store
+**/Thumbs.db
+
+# Large / generated local data
+device.zip
+**/camera_recordings/
 camera_recordings/
-__pycache__/
-*.log
-sensor_log_*.csv
-bin/
+**/uploads/
 uploads/
+**/logs/
+**/*.csv.gz
+sensor_log_*.csv
+*.log
+bin/
+server/udp_realtime/bin/
+server/analysis_server/bin/
+server/analysis_server/uploads/

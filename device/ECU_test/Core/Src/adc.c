@@ -27,17 +27,28 @@ volatile ADC_LinearReading_t adc_linear_readings[ADC_LINEAR_SENSOR_COUNT];
 static const uint32_t adc_linear_hal_channels[ADC_LINEAR_SENSOR_COUNT] =
 {
   ADC_CHANNEL_1, /* FR / PA1 */
-  ADC_CHANNEL_2, /* FL / PA2 */
-  ADC_CHANNEL_3, /* RR / PA3 */
-  ADC_CHANNEL_4  /* RL / PA4 */
+  ADC_CHANNEL_2, /* RR / PA2 */
+  ADC_CHANNEL_3, /* RL / PA3 */
+  ADC_CHANNEL_4  /* FL / PA4 */
 };
 
-#define ADC_LINEAR_SAMPLE_COUNT  4U
+static const uint16_t adc_linear_vmax_mv[ADC_LINEAR_SENSOR_COUNT] =
+{
+  ADC_LINEAR_VMAX_FR_MV,
+  ADC_LINEAR_VMAX_RR_MV,
+  ADC_LINEAR_VMAX_RL_MV,
+  ADC_LINEAR_VMAX_FL_MV
+};
+
+#define ADC_LINEAR_SAMPLE_COUNT  8U
 #define ADC_LINEAR_TIMEOUT_MS    100U
 #define ADC_MCU_TEMP_SAMPLE_COUNT  4U
 #define ADC_VREFINT_SAMPLE_COUNT   4U
 #define VDDA_MV_MIN                2900U
 #define VDDA_MV_MAX                3600U
+/* 지수이동평균: alpha = N/256 (클수록 반응 빠름). 32 ≈ 12.5% */
+#define ADC_LINEAR_EMA_ALPHA       32U
+#define ADC_LINEAR_EMA_SHIFT       8U
 
 volatile float adc_ecu_temp_c = 0.0f;
 volatile uint16_t adc_vdda_mv = (uint16_t)TEMPSENSOR_CAL_VREFANALOG;
@@ -45,6 +56,8 @@ volatile uint16_t adc_mcu_temp_raw = 0U;
 
 volatile uint32_t adc_read_fail_count = 0U;
 volatile uint16_t adc_debug_raw[ADC_LINEAR_SENSOR_COUNT];
+static uint16_t adc_linear_ema_raw[ADC_LINEAR_SENSOR_COUNT];
+static uint8_t adc_linear_ema_ready = 0U;
 
 static void ADC_EnsureAnalogPins(void)
 {
@@ -266,7 +279,9 @@ void ADC_LinearSensor_Init(void)
     adc_linear_readings[i].voltage_mv = 0U;
     adc_linear_readings[i].position_mm = 0.0f;
     adc_debug_raw[i] = 0U;
+    adc_linear_ema_raw[i] = 0U;
   }
+  adc_linear_ema_ready = 0U;
 
   ADC_EnsureAnalogPins();
   ADC_ReadAllLinearSensors();
@@ -294,21 +309,69 @@ uint16_t ADC_RawToVoltageMv(uint16_t raw)
   return (uint16_t)(((uint32_t)raw * ADC_VREF_MV) / ADC_MAX_RAW);
 }
 
-float ADC_RawToPositionMm(uint16_t raw)
+float ADC_RawToPositionMm(ADC_LinearChannel_t channel, uint16_t raw)
 {
-  return ((float)raw / (float)ADC_MAX_RAW) * ADC_LINEAR_STROKE_MM;
+  float position_mm;
+  uint16_t vmax_mv;
+
+  if (channel >= ADC_LINEAR_SENSOR_COUNT)
+  {
+    return 0.0f;
+  }
+
+  vmax_mv = adc_linear_vmax_mv[channel];
+  if (vmax_mv == 0U)
+  {
+    return 0.0f;
+  }
+
+  /* 채널별 풀스케일 전압 = 100mm */
+  position_mm = ((float)ADC_RawToVoltageMv(raw) / (float)vmax_mv) * ADC_LINEAR_STROKE_MM;
+  if (position_mm < 0.0f)
+  {
+    position_mm = 0.0f;
+  }
+  else if (position_mm > ADC_LINEAR_STROKE_MM)
+  {
+    position_mm = ADC_LINEAR_STROKE_MM;
+  }
+  return position_mm;
 }
 
 void ADC_ReadLinearSensor(ADC_LinearChannel_t channel, volatile ADC_LinearReading_t *reading)
 {
+  uint16_t raw;
+
   if ((channel >= ADC_LINEAR_SENSOR_COUNT) || (reading == NULL))
   {
     return;
   }
 
-  reading->raw = ADC_ReadRaw(channel);
+  raw = ADC_ReadRaw(channel);
+  if (adc_linear_ema_ready == 0U)
+  {
+    adc_linear_ema_raw[channel] = raw;
+  }
+  else
+  {
+    /* ema += (raw - ema) * alpha / 256 */
+    int32_t ema = (int32_t)adc_linear_ema_raw[channel];
+    ema += (((int32_t)raw - ema) * (int32_t)ADC_LINEAR_EMA_ALPHA) >> ADC_LINEAR_EMA_SHIFT;
+    if (ema < 0)
+    {
+      ema = 0;
+    }
+    else if (ema > (int32_t)ADC_MAX_RAW)
+    {
+      ema = (int32_t)ADC_MAX_RAW;
+    }
+    adc_linear_ema_raw[channel] = (uint16_t)ema;
+  }
+
+  reading->raw = adc_linear_ema_raw[channel];
   reading->voltage_mv = ADC_RawToVoltageMv(reading->raw);
-  reading->position_mm = ADC_RawToPositionMm(reading->raw);
+  reading->position_mm = ADC_RawToPositionMm(channel, reading->raw);
+  adc_debug_raw[channel] = reading->raw;
 }
 
 void ADC_ReadAllLinearSensors(void)
@@ -317,12 +380,9 @@ void ADC_ReadAllLinearSensors(void)
 
   for (uint8_t i = 0U; i < ADC_LINEAR_SENSOR_COUNT; i++)
   {
-    const uint16_t raw = ADC_ReadChannelOnce((ADC_LinearChannel_t)i);
-    adc_debug_raw[i] = raw;
-    adc_linear_readings[i].raw = raw;
-    adc_linear_readings[i].voltage_mv = ADC_RawToVoltageMv(raw);
-    adc_linear_readings[i].position_mm = ADC_RawToPositionMm(raw);
+    ADC_ReadLinearSensor((ADC_LinearChannel_t)i, &adc_linear_readings[i]);
   }
+  adc_linear_ema_ready = 1U;
 }
 
 static int16_t ADC_RawToMcuTempC(uint16_t raw, uint16_t vdda_mv)

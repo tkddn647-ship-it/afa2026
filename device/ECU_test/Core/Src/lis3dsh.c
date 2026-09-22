@@ -25,8 +25,8 @@
 #define LIS3DSH_SPI_READ       0x80U
 #define LIS3DSH_SPI_DUMMY      0x00U
 
-/* ST: 100Hz + XYZ enable, BDU off */
-#define LIS3DSH_CTRL_REG4_CFG  0x67U
+/* ST: 400Hz ODR + XYZ enable, BDU off (200Hz 샘플링보다 빠르게) */
+#define LIS3DSH_CTRL_REG4_CFG  0x77U
 #define LIS3DSH_CTRL_REG6_CFG  0x10U
 #define LIS3DSH_BOOT_FORCED    0x80U
 #define LIS3DSH_STATUS_ZYXDA   0x08U

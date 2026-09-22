@@ -26,8 +26,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "dma.h"
 #include "lis3dsh.h"
 #include "sensor_uart.h"
+#include "uart4_tx.h"
 #include "can_lws.h"
 #include "can_vehicle.h"
 #include "user_button.h"
@@ -62,7 +64,26 @@ void SystemClock_Config(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 `*/
+/* USER CODE BEGIN 0 */
+
+/* Independent Watchdog — 루프가 멈추면 ~1초 뒤 자동 리셋 (발열 방지) */
+static void Board_IWDG_Init(void)
+{
+  RCC->CSR |= RCC_CSR_LSION;
+  while ((RCC->CSR & RCC_CSR_LSIRDY) == 0U)
+  {
+  }
+
+  IWDG->KR = 0x5555U; /* write access */
+  IWDG->PR = 4U;      /* /64 */
+  IWDG->RLR = 625U;   /* ~1.25s @ LSI 32kHz */
+  IWDG->KR = 0xCCCCU; /* start */
+}
+
+static void Board_IWDG_Kick(void)
+{
+  IWDG->KR = 0xAAAAU;
+}
 
 /* USER CODE END 0 */
 
@@ -90,7 +111,7 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  MX_DMA_Init();
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -104,11 +125,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   (void)LIS3DSH_Init();
   ADC_LinearSensor_Init();
+  Uart4Tx_Init();
   SensorUart_Init();
   CAN_LWS_Init();
   CAN_Vehicle_Init();
   UserButton_Init();
   WheelSpeedUart_Init();
+  Board_IWDG_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -119,6 +142,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     main_loop_count++;
+    Board_IWDG_Kick();
     CAN_Vehicle_Process();
     SensorUart_Process();
     UserButton_Process();
@@ -183,11 +207,9 @@ void SystemClock_Config(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
+  /* 무한루프면 칩이 계속 살아 있어 발열 → 바로 리셋해서 복구 */
   __disable_irq();
-  while (1)
-  {
-  }
+  NVIC_SystemReset();
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

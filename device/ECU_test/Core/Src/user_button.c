@@ -12,7 +12,7 @@
 #include "user_button.h"
 #include "can_lws.h"
 #include "main.h"
-#include "usart.h"
+#include "uart4_tx.h"
 #include <string.h>
 
 #define USER_BTN_DEBOUNCE_MS     40U
@@ -45,7 +45,7 @@ static void UserButton_NotifyCal(uint8_t ok)
   const char *msg = ok ? ok_msg : fail_msg;
   uint16_t len = (uint16_t)strlen(msg);
 
-  (void)HAL_UART_Transmit(&huart4, (const uint8_t *)msg, len, 30U);
+  (void)Uart4Tx_Write((const uint8_t *)msg, len);
 }
 
 static void UserButton_StartCalibrate(void)

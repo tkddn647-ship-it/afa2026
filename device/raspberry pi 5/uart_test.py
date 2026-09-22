@@ -151,7 +151,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--port", default="/dev/ttyAMA0")
     p.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     p.add_argument("--seconds", type=float, default=5.0)
-    p.add_argument("--try-bauds", default="460800,115200,230400")
+    p.add_argument("--try-bauds", default="921600,460800,115200,230400")
     p.add_argument("--loopback", action="store_true")
     p.add_argument(
         "--stop-service",
@@ -182,7 +182,7 @@ def main() -> None:
     print("\n[fail] STM 수신 없음")
     print("  1) STM 리셋 버튼 누르거나 전원 재인가")
     print("  2) TX/RX 교차·GND 확인 (Pi8->STM_RX, Pi10->STM_TX)")
-    print("  3) STM 펌웨어 UART4 460800 / PC10(TX) PC11(RX) 확인")
+    print("  3) STM 펌웨어 UART4 921600 / PC10(TX) PC11(RX) 확인")
     print("  4) USB-TTL로 STM TX만 PC에 연결해 시리얼 모니터 확인")
     sys.exit(1)
 
