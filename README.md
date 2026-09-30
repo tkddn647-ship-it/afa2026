@@ -4,6 +4,8 @@
 
 이 README는 `device/`(현장 장비) 중심으로, 하드웨어 구성부터 STM32 펌웨어·Raspberry Pi·서버 연동까지의 **설계 의도와 구현 구조**를 정리합니다.
 
+서버에 관한 코드는 서버 노트북에 있지만 언젠간 빠른 시일 내에 코드 업로드 할 예정입니다.
+
 관련 저장소: [tkddn647-ship-it/afa2026](https://github.com/tkddn647-ship-it/afa2026)
 
 ---
