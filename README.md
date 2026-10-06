@@ -8,7 +8,7 @@
 | 항목 | 내용 |
 |------|------|
 | 기간 | 2025.09 ~ 2026.08 |
-| 역할 | 계측 파트장 (계측 파트 2인) · 텔레메트리 보드 회로 구상 · 회로도 설계 |
+| 역할 | 계측 파트장 (계측 파트 2인) |
 | 하드웨어 | STM32F407, Raspberry Pi 5, Cascadia 인버터 · Orion BMS 2 · Bosch LWS (CAN) |
 | 소프트웨어 | C (STM32 HAL, DMA), Python (FastAPI 서버, 분석), JavaScript (대시보드) |
 
@@ -36,7 +36,7 @@
 | `device/ECU_test/` | STM32CubeIDE 프로젝트 (메인 MCU 펌웨어) |
 | `device/raspberry pi 5/` | UART 수신 · 서버 전송 · 카메라 업로드 |
 | `server/` | 로깅(`udp_logger`), 실시간 대시보드(`udp_realtime`), 분석 서버(`analysis_server`) |
-| `hardware/26_TELEPCB/` | 텔레메트리 보드 KiCad 회로도 · PCB · 거버 (회로 구상·회로도: 권상우, PCB 배선: 팀원) |
+| `hardware/26_TELEPCB/` | 텔레메트리 보드 KiCad 회로도 · PCB · 거버 |
 
 아래부터는 다음 담당자를 위한 **설계 의도와 구현 구조** 문서입니다.
 
