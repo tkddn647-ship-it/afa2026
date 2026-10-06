@@ -47,3 +47,14 @@ bin/
 server/udp_realtime/bin/
 server/analysis_server/bin/
 server/analysis_server/uploads/
+# KiCad
+.history/
+*-backups/
+
+*.kicad_prl
+fp-info-cache
+*.lck
+
+__MACOSX/
+
+.DS_Store
