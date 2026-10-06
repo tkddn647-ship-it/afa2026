@@ -58,7 +58,7 @@ def _load_env_file(filename: str = "stm_ingest.env") -> None:
 
 _load_env_file()
 
-DEFAULT_INGEST_URL = os.getenv("INGEST_URL", "http://3.39.188.80:8000/ingest")
+DEFAULT_INGEST_URL = os.getenv("INGEST_URL", "http://127.0.0.1:8000/ingest")
 DEFAULT_REALTIME_URL = os.getenv("REALTIME_URL", "").strip()
 DEFAULT_DEVICE = os.getenv("DEVICE", "raspberry-pi-stm")
 DEFAULT_UART_PORT_ENV = os.getenv("UART_PORT", DEFAULT_UART_PORT)

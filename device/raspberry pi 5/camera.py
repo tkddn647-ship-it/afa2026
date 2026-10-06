@@ -14,7 +14,7 @@ from requests.adapters import HTTPAdapter
 from picamera2 import Picamera2
 
 
-DEFAULT_CAMERA_URL = "http://3.39.188.80:8012/api/camera/frame"
+DEFAULT_CAMERA_URL = os.getenv("CAMERA_URL", "http://127.0.0.1:8012/api/camera/frame")
 DEVICE_NAME = "raspberry-pi-camera"
 
 
