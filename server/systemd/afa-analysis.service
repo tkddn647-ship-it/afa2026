@@ -1,0 +1,19 @@
+[Unit]
+Description=AFA Analysis Server
+After=network.target
+
+[Service]
+Type=simple
+User=afa
+WorkingDirectory=/home/afa/다운로드/afa2026-main/server/analysis_server
+EnvironmentFile=/home/afa/다운로드/afa2026-main/server/env.ingest
+Environment=PATH=/home/afa/다운로드/afa2026-main/server/.venv/bin:/usr/local/bin:/usr/bin
+Environment=PYTHONPATH=/home/afa/다운로드/afa2026-main/server
+Environment=PORT=8013
+LimitNOFILE=65536
+ExecStart=/home/afa/다운로드/afa2026-main/server/.venv/bin/python3 -m uvicorn analysis:app --host 0.0.0.0 --port 8013 --log-level warning --no-access-log
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

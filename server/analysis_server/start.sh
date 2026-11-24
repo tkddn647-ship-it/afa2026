@@ -1,21 +1,32 @@
 #!/usr/bin/env bash
+# analysis server — default port 8013
 set -euo pipefail
 
-ROOT="/home/ubuntu/analysis_server"
-PY="/usr/bin/python3"
-UVICORN="/home/ubuntu/.local/bin/uvicorn"
-PORT="${PORT:-8011}"
-LOG="/tmp/analysis_server.log"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$SCRIPT_DIR"
+PY="$(command -v python3 || echo /usr/bin/python3)"
+UVICORN="$(command -v uvicorn || true)"
+if [[ -z "$UVICORN" && -x "$HOME/.local/bin/uvicorn" ]]; then
+  UVICORN="$HOME/.local/bin/uvicorn"
+fi
+if [[ -z "$UVICORN" ]]; then
+  echo "[fail] uvicorn not found" >&2
+  exit 1
+fi
 
-export PYTHONPATH="/home/ubuntu:${PYTHONPATH:-}"
+export PYTHONPATH="${SERVER_ROOT}:${PYTHONPATH:-}"
 # Video range requests open many FDs; soft limit 1024 causes Errno 24.
 ulimit -n 65536 2>/dev/null || true
-if [[ -f /home/ubuntu/env.ingest ]]; then
+if [[ -f "$SERVER_ROOT/env.ingest" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source /home/ubuntu/env.ingest
+  source "$SERVER_ROOT/env.ingest"
   set +a
 fi
+
+PORT="${PORT:-${ANALYSIS_PORT:-8013}}"
+LOG="/tmp/analysis_server.log"
 cd "$ROOT"
 
 if ss -ltn 2>/dev/null | rg -q ":${PORT}\\b"; then

@@ -1,0 +1,15 @@
+[Unit]
+Description=AFA MediaMTX RTSP Relay (:8554)
+After=network.target
+Before=afa-camera.service
+
+[Service]
+Type=simple
+User=afa
+WorkingDirectory=/home/afa/다운로드/afa2026-main/server/udp_realtime/mediamtx
+ExecStart=/home/afa/다운로드/afa2026-main/server/udp_realtime/bin/mediamtx /home/afa/다운로드/afa2026-main/server/udp_realtime/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

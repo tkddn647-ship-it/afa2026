@@ -29,9 +29,9 @@ BMS_STATUS_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 MOTOR_STATUS_ALIASES: dict[str, tuple[str, ...]] = {
-    "precharge": ("precharge", "pre_charge", "P"),
-    "main_contactor": ("main_contactor", "contactor", "main_relay", "A"),
-    "inverter_mode": ("inverter_mode", "mode", "inv_mode", "X"),
+    "precharge": ("motor_precharge", "precharge", "pre_charge", "P"),
+    "main_contactor": ("motor_main_contactor", "main_contactor", "contactor", "main_relay", "A"),
+    "inverter_mode": ("motor_inverter_mode", "inverter_mode", "mode", "inv_mode", "X"),
 }
 
 

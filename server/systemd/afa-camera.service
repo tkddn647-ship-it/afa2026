@@ -1,0 +1,19 @@
+[Unit]
+Description=AFA Camera Server (camera_server)
+After=network.target afa-realtime.service afa-mediamtx.service
+Wants=afa-mediamtx.service
+
+[Service]
+Type=simple
+User=afa
+WorkingDirectory=/home/afa/다운로드/afa2026-main/server/udp_realtime
+EnvironmentFile=/home/afa/다운로드/afa2026-main/server/env.ingest
+Environment=PATH=/home/afa/다운로드/afa2026-main/server/.venv/bin:/usr/local/bin:/usr/bin
+Environment=PYTHONPATH=/home/afa/다운로드/afa2026-main/server
+Environment=PORT=8012
+ExecStart=/home/afa/다운로드/afa2026-main/server/.venv/bin/python3 -m uvicorn camera_server:app --host 0.0.0.0 --port 8012
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

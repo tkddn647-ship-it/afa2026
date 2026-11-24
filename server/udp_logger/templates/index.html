@@ -162,6 +162,45 @@
       margin-bottom: 16px;
     }
 
+    .log-label-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 12px 0 14px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: rgba(10, 16, 28, 0.9);
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .log-label-wrap input {
+      width: min(220px, 42vw);
+      min-height: 34px;
+      border: 0;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .log-label-wrap input::placeholder {
+      color: rgba(139, 163, 199, 0.55);
+      font-weight: 500;
+    }
+
+    .log-label-wrap:focus-within {
+      border-color: rgba(92, 200, 255, 0.45);
+    }
+
+    .log-label-wrap.is-disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
     button, a.btnlink {
       min-height: 40px;
       padding: 0 18px;
@@ -194,6 +233,102 @@
       background: rgba(80, 20, 30, 0.45);
       color: #fecdd3;
     }
+
+    button.secondary {
+      border-color: rgba(120, 160, 220, 0.28);
+      background: rgba(16, 24, 40, 0.85);
+      color: #dce8ff;
+    }
+
+    .offset-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .offset-hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+
+    .check-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .check-item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: rgba(8, 12, 22, 0.55);
+    }
+
+    .check-item.ok { border-color: rgba(52, 211, 153, 0.35); }
+    .check-item.warn { border-color: rgba(251, 191, 36, 0.45); }
+    .check-item.bad { border-color: rgba(248, 113, 113, 0.5); }
+
+    .check-label {
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 4px;
+    }
+
+    .check-detail {
+      color: var(--text);
+      font-size: 0.8rem;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .verify-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .verify-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .verify-row.pass { border-color: rgba(52, 211, 153, 0.35); }
+    .verify-row.fail { border-color: rgba(248, 113, 113, 0.4); }
+    .verify-row strong { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .report-panel {
+      margin: 0 0 16px;
+      padding: 12px;
+      border: 1px solid rgba(92, 200, 255, 0.28);
+      border-radius: 10px;
+      background: rgba(8, 20, 34, 0.55);
+    }
+
+    .report-panel[hidden] { display: none; }
+    .report-panel h3 { margin: 0 0 10px; font-size: 0.85rem; }
+    .report-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .report-metric {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+    }
+    .report-metric span { display: block; color: var(--muted); font-size: 0.68rem; }
+    .report-metric strong { display: block; margin-top: 3px; font-size: 0.9rem; }
 
     .session-head {
       display: flex;
@@ -284,6 +419,53 @@
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .date-pick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 14px 0 12px;
+    }
+
+    .date-pick select {
+      min-height: 38px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line-strong);
+      background: rgba(10, 16, 28, 0.95);
+      color: var(--text);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    .date-pick .date-hint {
+      color: var(--muted);
+      font-size: 0.78rem;
+      width: 100%;
+      margin: 0;
+    }
+
+    .archive-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 8px 0 10px;
+    }
+
+    .archive-head h3 {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    .archive-head .muted {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
     }
 
     #statusLine {
@@ -301,17 +483,19 @@
 
     @media (max-width: 900px) {
       .stats-grid, .active-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .check-grid, .report-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 768px) {
       .page { padding: 14px; }
       .topbar { flex-direction: column; align-items: stretch; }
       .stats-grid, .active-panel { grid-template-columns: 1fr; }
+      .check-grid, .verify-list, .report-grid { grid-template-columns: 1fr; }
     }
   </style>
   {% include "partials/mobile_compact.html" %}
 </head>
-<body>
+<body class="logger-page">
   <div class="page">
     <div class="topbar">
       <div class="brand">
@@ -320,6 +504,7 @@
         <div class="chips">
           <span class="chip"><span>5초 평균</span> <strong><span id="hz5">0.0</span> Hz</strong></span>
           <span class="chip"><span>연결 장비</span> <strong><span id="connectedDevices">0</span></strong></span>
+          <span class="chip offset-chip" id="offsetChip"><span>오프셋</span> <strong id="offsetStatus">없음</strong></span>
         </div>
       </div>
       {% include "partials/server_nav.html" %}
@@ -337,10 +522,45 @@
     </section>
 
     <div class="bar desktop-only">
+      <label class="log-label-wrap" id="logLabelWrap" for="logLabelInput">
+        <span>이름</span>
+        <input id="logLabelInput" type="text" maxlength="40" placeholder="예: 테스트주행" autocomplete="off" />
+      </label>
       <button id="startButton" type="button">로깅+녹화 시작</button>
       <button id="stopButton" class="stop" type="button" disabled>로깅+녹화 중지</button>
       <span id="statusLine">상태 확인 중...</span>
     </div>
+
+    <section class="panel desktop-only" id="preflightCard">
+      <div class="session-head">
+        <div>
+          <h2>시작 전 점검</h2>
+          <p>센서 수신·STM 시간·저장공간·카메라·오프셋을 자동 확인합니다.</p>
+        </div>
+        <span class="badge idle" id="preflightBadge">확인 중</span>
+      </div>
+      <div class="check-grid" id="preflightChecks">
+        <div class="empty">점검 중...</div>
+      </div>
+    </section>
+
+    <section class="panel desktop-only" id="offsetCard">
+      <div class="session-head">
+        <div>
+          <h2>센서 오프셋</h2>
+          <p>정지 상태에서 보정하세요. 리니어는 0mm, 가속도는 X/Y=0G · Z=1G 기준으로 맞춥니다.</p>
+        </div>
+      </div>
+      <div class="offset-actions">
+        <button id="offsetLinearButton" class="secondary" type="button">리니어 제로 (0mm)</button>
+        <button id="offsetAccelButton" class="secondary" type="button">가속도 보정 (X/Y=0, Z=1G)</button>
+        <button id="offsetVerifyButton" class="secondary" type="button">3초 안정성 검증</button>
+        <button id="offsetResetButton" class="stop" type="button" disabled>오프셋 초기화</button>
+      </div>
+      <p class="offset-hint" id="offsetLine">장비가 연결된 뒤 최신 샘플로 보정합니다. 보정값은 CSV·실시간 화면에 함께 반영됩니다.</p>
+      <div class="verify-list" id="offsetVerifyList"></div>
+      {% include "partials/offset_status.html" %}
+    </section>
 
     <section class="panel desktop-only" id="sessionCard">
       <div class="session-head">
@@ -374,11 +594,33 @@
         </div>
       </div>
 
-      <div id="completedList" class="empty">완료된 로깅 파일이 없습니다.</div>
+      <div class="report-panel" id="sessionReport" hidden>
+        <h3>최근 세션 리포트</h3>
+        <div class="report-grid" id="sessionReportGrid"></div>
+      </div>
+
+      <div class="archive-head">
+        <h3>날짜별 로그 파일</h3>
+        <span class="muted" id="archiveCount">-</span>
+      </div>
+      <div class="date-pick" id="datePick">
+        <select id="archiveYear" aria-label="년도"></select>
+        <select id="archiveMonth" aria-label="월"></select>
+        <select id="archiveDay" aria-label="일"></select>
+        <button id="archiveReload" class="secondary" type="button">조회</button>
+        <a id="archiveZipLink" class="btnlink disabled" href="#" aria-disabled="true">그날 모두 ZIP</a>
+        <p class="date-hint">파일이 있는 날짜만 선택할 수 있습니다. (한국 시간 기준)</p>
+      </div>
+      <div id="completedList" class="empty">날짜를 선택하세요.</div>
     </section>
   </div>
 
   <script>
+    let lastPreflightSignature = '';
+    let lastOffsetSignature = '';
+    let archiveListSignature = '';
+    let archiveCalendar = { years: {}, latest: '' };
+
     function formatBytes(bytes) {
       const size = Number(bytes || 0);
       if (size < 1024) return size + ' B';
@@ -395,11 +637,11 @@
       }
     }
 
-    async function postJson(url) {
+    async function postJson(url, body) {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify(body || {}),
       });
       let data = {};
       try { data = await res.json(); } catch (e) {}
@@ -412,34 +654,230 @@
       badge.textContent = text;
     }
 
-    function renderCompleted(sessions) {
-      const box = document.getElementById('completedList');
-      if (!sessions || !sessions.length) {
-        box.className = 'empty';
-        box.textContent = '완료된 로깅 파일이 없습니다.';
+    function formatDuration(seconds) {
+      const total = Math.max(0, Math.round(Number(seconds || 0)));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return (h ? h + '시간 ' : '') + (m ? m + '분 ' : '') + s + '초';
+    }
+
+    function renderPreflight(data) {
+      const badge = document.getElementById('preflightBadge');
+      const box = document.getElementById('preflightChecks');
+      const checks = data?.checks || [];
+      const signature = JSON.stringify({
+        ready: Boolean(data?.ready),
+        checks: checks.map((c) => [c.label, c.ok, c.detail, c.level]),
+      });
+      if (signature === lastPreflightSignature) return;
+      lastPreflightSignature = signature;
+      badge.className = 'badge ' + (data?.ready ? 'active' : 'warn');
+      badge.textContent = data?.ready ? 'READY' : '확인 필요';
+      box.innerHTML = checks.map((check) => (
+        '<div class="check-item ' + (check.level || (check.ok ? 'ok' : 'bad')) + '">' +
+          '<div class="check-label">' + check.label + '</div>' +
+          '<div class="check-detail">' + (check.ok ? '✓ ' : '⚠ ') + check.detail + '</div>' +
+        '</div>'
+      )).join('') || '<div class="empty">점검 정보를 불러오지 못했습니다.</div>';
+    }
+
+    function renderOffsetVerify(data) {
+      const box = document.getElementById('offsetVerifyList');
+      const items = data?.items || [];
+      if (!items.length) {
+        box.innerHTML = '<div class="offset-empty">' + (data?.message || '검증할 오프셋 데이터가 없습니다.') + '</div>';
         return;
       }
-      box.className = '';
-      box.innerHTML = sessions.map((session) => (
-        '<div class="file-row">' +
-          '<div>' +
-            '<div class="file-name">' + (session.filename || 'sensor_log.csv') + '</div>' +
-            '<div class="file-meta">' + formatBytes(session.download_bytes) +
-              ' · ' + formatTime(session.stopped_at) +
-              (session.part_count > 1 ? ' · ' + session.part_count + ' parts' : '') +
-              (session.is_archive ? ' · zip' : (session.compressed ? ' · gzip' : '')) +
-            '</div>' +
-          '</div>' +
-          '<div class="file-actions">' +
-            '<a class="btnlink" href="' + session.download_url + '">Download</a>' +
-            '<button type="button" class="stop" data-delete-token="' + session.token + '">Delete</button>' +
-          '</div>' +
+      box.innerHTML = items.map((item) => (
+        '<div class="verify-row ' + (item.passed ? 'pass' : 'fail') + '">' +
+          '<span>' + (item.passed ? '✓ ' : '⚠ ') + item.label + '</span>' +
+          '<strong>평균 ' + Number(item.mean).toFixed(item.unit === 'g' ? 3 : 2) + item.unit +
+            ' · σ ' + Number(item.stddev).toFixed(item.unit === 'g' ? 3 : 2) + '</strong>' +
         '</div>'
       )).join('');
+    }
 
-      box.querySelectorAll('[data-delete-token]').forEach((button) => {
-        button.addEventListener('click', () => deleteSession(button.dataset.deleteToken));
+    function renderSessionReport(report) {
+      const panel = document.getElementById('sessionReport');
+      const grid = document.getElementById('sessionReportGrid');
+      if (!report || !report.session_id) {
+        panel.hidden = true;
+        return;
+      }
+      const fields = report.fields || {};
+      const fieldMax = (name, digits) => {
+        const value = Number(fields[name]?.max);
+        return Number.isFinite(value) ? value.toFixed(digits) : '-';
+      };
+      const suspensionMaxRange = Math.max(
+        Number(fields.FL?.range || 0),
+        Number(fields.FR?.range || 0),
+        Number(fields.RL?.range || 0),
+        Number(fields.RR?.range || 0)
+      );
+      const metrics = [
+        ['기록 시간', formatDuration(report.duration_sec)],
+        ['평균 저장률', Number(report.average_hz || 0).toFixed(1) + ' Hz'],
+        ['기록 행', Number(report.rows || 0).toLocaleString()],
+        ['드롭 행', Number(report.dropped_rows || 0).toLocaleString()],
+        ['최대 XY G', Number(report.max_xy_g || 0).toFixed(3) + ' G'],
+        ['서스 최대 가동범위', suspensionMaxRange.toFixed(1) + ' mm'],
+        ['최대 모터 RPM', fieldMax('inv_motor_speed', 0) + ' rpm'],
+        ['최고 온도', Math.max(
+          Number(fields.ecu_temp?.max || 0),
+          Number(fields.inv_temp_igt?.max || 0),
+          Number(fields.inv_temp_motor?.max || 0),
+          Number(fields.bms_temp_maxvalue?.max || 0)
+        ).toFixed(1) + ' °C'],
+        ['STM 중복/역행', Number(report.stm_duplicate_count || 0) + ' / ' + Number(report.stm_backward_count || 0)],
+        ['카메라', report.camera_ok ? '정상 종료' : '확인 필요'],
+      ];
+      grid.innerHTML = metrics.map(([label, value]) => (
+        '<div class="report-metric"><span>' + label + '</span><strong>' + value + '</strong></div>'
+      )).join('');
+      panel.hidden = false;
+    }
+
+    function fillSelect(select, values, selected) {
+      const opts = values.map((value) => {
+        const label = String(value);
+        return '<option value="' + label + '"' + (label === String(selected) ? ' selected' : '') + '>' + label + '</option>';
       });
+      // 옵션 구성이 같으면 다시 그리지 않음 (선택 중 깜빡임 방지)
+      const sig = opts.join('|');
+      if (select.dataset.sig === sig) {
+        if (selected !== undefined && selected !== null && select.value !== String(selected)) {
+          select.value = String(selected);
+        }
+        return;
+      }
+      select.dataset.sig = sig;
+      select.innerHTML = opts.join('') || '<option value="">-</option>';
+    }
+
+    function selectedYmd() {
+      const y = document.getElementById('archiveYear').value;
+      const m = document.getElementById('archiveMonth').value;
+      const d = document.getElementById('archiveDay').value;
+      if (!y || !m || !d) return '';
+      return y + m.padStart(2, '0') + d.padStart(2, '0');
+    }
+
+    function syncMonthDaySelectors(preferredYmd) {
+      const yearsObj = archiveCalendar.years || {};
+      const yearKeys = Object.keys(yearsObj).sort().reverse();
+      const yearSel = document.getElementById('archiveYear');
+      const monthSel = document.getElementById('archiveMonth');
+      const daySel = document.getElementById('archiveDay');
+      if (!yearKeys.length) {
+        fillSelect(yearSel, [], '');
+        fillSelect(monthSel, [], '');
+        fillSelect(daySel, [], '');
+        return;
+      }
+      let y = preferredYmd ? preferredYmd.slice(0, 4) : yearSel.value;
+      if (!yearsObj[y]) y = (preferredYmd && yearsObj[preferredYmd.slice(0, 4)]) ? preferredYmd.slice(0, 4) : yearKeys[0];
+      fillSelect(yearSel, yearKeys, y);
+
+      const monthKeys = Object.keys(yearsObj[y] || {}).sort().reverse();
+      let m = preferredYmd && preferredYmd.slice(0, 4) === y ? preferredYmd.slice(4, 6) : monthSel.value;
+      if (!yearsObj[y][m]) m = monthKeys[0] || '';
+      fillSelect(monthSel, monthKeys, m);
+
+      const dayKeys = Object.keys((yearsObj[y] || {})[m] || {}).sort().reverse();
+      let d = preferredYmd && preferredYmd.slice(0, 6) === (y + m) ? preferredYmd.slice(6, 8) : daySel.value;
+      if (!(yearsObj[y][m] || {})[d]) d = dayKeys[0] || '';
+      fillSelect(daySel, dayKeys, d);
+    }
+
+    async function loadArchiveCalendar(preferredYmd) {
+      try {
+        const res = await fetch('/api/logging/files/calendar', { cache: 'no-store' });
+        archiveCalendar = await res.json();
+      } catch (err) {
+        archiveCalendar = { years: {}, latest: '' };
+      }
+      const target = preferredYmd || archiveCalendar.latest || '';
+      syncMonthDaySelectors(target);
+      await loadArchiveFiles();
+    }
+
+    async function loadArchiveFiles(options) {
+      const force = Boolean(options && options.force);
+      const box = document.getElementById('completedList');
+      const countEl = document.getElementById('archiveCount');
+      const zipLink = document.getElementById('archiveZipLink');
+      const ymd = selectedYmd();
+      if (!ymd) {
+        archiveListSignature = '';
+        box.className = 'empty';
+        box.textContent = '저장된 로그 파일이 없습니다.';
+        countEl.textContent = '0개';
+        zipLink.classList.add('disabled');
+        zipLink.setAttribute('aria-disabled', 'true');
+        zipLink.removeAttribute('href');
+        return;
+      }
+      const showLoading = force || !box.querySelector('.file-row');
+      if (showLoading) {
+        box.className = 'empty';
+        box.textContent = '불러오는 중...';
+      }
+      try {
+        const res = await fetch('/api/logging/files?date=' + encodeURIComponent(ymd), { cache: 'no-store' });
+        const data = await res.json();
+        const files = data.files || [];
+        const signature = ymd + '|' + files.map((f) => f.filename + ':' + f.download_bytes).join(',');
+        countEl.textContent = (data.date || ymd) + ' · ' + files.length + '개';
+        if (data.zip_url && files.length) {
+          zipLink.href = data.zip_url;
+          zipLink.classList.remove('disabled');
+          zipLink.removeAttribute('aria-disabled');
+        } else {
+          zipLink.classList.add('disabled');
+          zipLink.setAttribute('aria-disabled', 'true');
+          zipLink.removeAttribute('href');
+        }
+        if (!force && signature === archiveListSignature && box.querySelector('.file-row')) {
+          return;
+        }
+        archiveListSignature = signature;
+        if (!files.length) {
+          box.className = 'empty';
+          box.textContent = '이 날짜에 다운로드할 csv.gz가 없습니다.';
+          return;
+        }
+        box.className = '';
+        box.innerHTML = files.map((file) => (
+          '<div class="file-row">' +
+            '<div>' +
+              '<div class="file-name">' +
+                (file.label ? ('[' + file.label + '] ') : '') +
+                (file.filename || 'sensor_log.csv') +
+              '</div>' +
+              '<div class="file-meta">' + formatBytes(file.download_bytes) +
+                (file.stamp ? ' · ' + file.stamp : '') +
+                (file.compressed ? ' · gzip' : ' · csv') +
+                (file.part ? ' · part ' + file.part : '') +
+              '</div>' +
+            '</div>' +
+            '<div class="file-actions">' +
+              '<a class="btnlink" href="' + file.download_url + '">Download</a>' +
+            '</div>' +
+          '</div>'
+        )).join('');
+      } catch (err) {
+        if (showLoading || !box.querySelector('.file-row')) {
+          box.className = 'empty';
+          box.textContent = '목록을 불러오지 못했습니다.';
+          countEl.textContent = '-';
+        }
+      }
+    }
+
+    function renderCompleted(_sessions) {
+      loadArchiveFiles({ force: true });
     }
 
     async function deleteSession(token) {
@@ -450,7 +888,7 @@
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.message || '삭제 실패');
         document.getElementById('statusLine').textContent = '삭제 완료';
-        renderCompleted(data.completed_sessions || []);
+        await loadArchiveCalendar(selectedYmd());
       } catch (err) {
         document.getElementById('statusLine').textContent = '삭제 실패: ' + (err.message || err);
       }
@@ -458,23 +896,82 @@
 
     function formatCameraStatus(camera) {
       if (!camera || !camera.linked) return '연동 안 함';
+      const mode = String(camera.record_mode || camera.record_mode_config || camera.mode || '').toLowerCase();
+      const isRtsp = mode === 'rtsp' || mode === 'rtsp-mp4';
       if (camera.active) {
-        if (camera.record_mode === 'rtsp' || camera.mode === 'rtsp-mp4') {
+        if (isRtsp) {
           return 'RTSP 녹화 중 · ' + formatBytes(camera.bytes_written) +
             (camera.filename ? ' · ' + camera.filename : '');
         }
         return '녹화 중 · ' + (camera.frames_written || 0) + ' frames' +
           (camera.filename ? ' · ' + camera.filename : '');
       }
-      if (camera.armed) return '대기 중 (프레임 수신 시 시작)';
+      if (camera.armed) {
+        return isRtsp ? 'RTSP 대기 (MediaMTX 송출 대기)' : '대기 중 (프레임 수신 시 시작)';
+      }
+      if (camera.start_error) {
+        return 'RTSP 시작 실패 · Pi rtsp_publish 확인';
+      }
       if (camera.message && String(camera.message).indexOf('프레임 상한') >= 0) {
         return '녹화 중단: 프레임 상한';
       }
-      if (!camera.active && (camera.bytes_written > 0 || camera.frames_written > 0)) {
-        return '녹화 중지됨 · ' + formatBytes(camera.bytes_written || 0) +
+      if (!camera.active && (camera.bytes_written > 0 || camera.frames_written > 0 || camera.filename)) {
+        return (isRtsp ? 'RTSP 중지됨 · ' : '녹화 중지됨 · ') + formatBytes(camera.bytes_written || 0) +
           (camera.filename ? ' · ' + camera.filename : '');
       }
-      return '대기';
+      return isRtsp ? 'RTSP 대기' : '대기';
+    }
+
+    async function refreshOffsetStatus() {
+      try {
+        const res = await fetch('/api/offset/status', { cache: 'no-store' });
+        const data = await res.json();
+        const signature = JSON.stringify({
+          devices: data?.offset_device_count || 0,
+          sensors: data?.offset_sensor_count || 0,
+          items: (data?.items || []).map((i) => [i.device, i.label, i.display]),
+        });
+        if (signature === lastOffsetSignature) return;
+        lastOffsetSignature = signature;
+        if (typeof window.renderOffsetStatus === 'function') {
+          window.renderOffsetStatus(data);
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    let lastPreflightAt = 0;
+    async function refreshPreflight(force) {
+      const now = Date.now();
+      if (!force && now - lastPreflightAt < 5000) return;
+      lastPreflightAt = now;
+      try {
+        const res = await fetch('/api/logging/preflight', { cache: 'no-store' });
+        renderPreflight(await res.json());
+      } catch (err) {
+        renderPreflight({ ready: false, checks: [] });
+      }
+    }
+
+    async function runOffsetVerification() {
+      const line = document.getElementById('offsetLine');
+      try {
+        const res = await fetch('/api/offset/verify', { cache: 'no-store' });
+        const data = await res.json();
+        renderOffsetVerify(data);
+        line.textContent = data.passed
+          ? '3초 검증 통과 · 보정 평균과 흔들림이 기준 안에 있습니다.'
+          : (data.message || '3초 검증 확인 필요 · 아래 평균 오차와 σ(흔들림)를 확인하세요.');
+      } catch (err) {
+        line.textContent = '오프셋 검증 실패: ' + (err.message || err);
+      }
+    }
+
+    function scheduleOffsetVerification() {
+      const line = document.getElementById('offsetLine');
+      line.textContent += ' · 3초 안정성 검증 중...';
+      window.setTimeout(runOffsetVerification, 3000);
     }
 
     async function refreshAll() {
@@ -485,6 +982,8 @@
         ]);
         const stats = await statsRes.json();
         const logging = await logRes.json();
+        refreshOffsetStatus();
+        refreshPreflight(false);
 
         const hz = String(stats.hz_5s_avg ?? 0);
         const devices = String(logging.connected_devices ?? 0);
@@ -494,6 +993,10 @@
         const active = Boolean(logging.enabled);
         document.getElementById('startButton').disabled = active || !logging.can_start;
         document.getElementById('stopButton').disabled = !active;
+        const labelInput = document.getElementById('logLabelInput');
+        const labelWrap = document.getElementById('logLabelWrap');
+        if (labelInput) labelInput.disabled = active;
+        if (labelWrap) labelWrap.classList.toggle('is-disabled', active);
 
         const activePanel = document.getElementById('activePanel');
         if (active) {
@@ -515,45 +1018,148 @@
         } else {
           activePanel.hidden = true;
           setBadge(logging.can_start ? 'idle' : 'warn', logging.can_start ? '대기 중' : '장비 없음');
-          document.getElementById('statusLine').textContent = logging.can_start
-            ? '로깅+녹화 시작을 누르세요.'
-            : '연결된 장비가 없습니다.';
+          // 사용자가 방금 본 상태 문구를 1초마다 덮어쓰지 않음 (진행 중 문구만 갱신)
+          const statusEl = document.getElementById('statusLine');
+          const current = statusEl.textContent || '';
+          if (
+            current.indexOf('저장 중') === 0 ||
+            current.indexOf('상태 확인') === 0 ||
+            current === '상태 확인 중...' ||
+            current.indexOf('상태 조회 실패') === 0
+          ) {
+            statusEl.textContent = logging.can_start
+              ? '로깅+녹화 시작을 누르세요.'
+              : '연결된 장비가 없습니다.';
+          }
         }
 
-        renderCompleted(logging.completed_sessions || []);
+        // 파일 목록/리포트는 폴링으로 다시 그리지 않음 (스크롤 깜빡임 방지)
       } catch (err) {
         document.getElementById('statusLine').textContent = '상태 조회 실패: ' + (err.message || err);
       }
     }
 
+    document.getElementById('offsetLinearButton').addEventListener('click', async () => {
+      const line = document.getElementById('offsetLine');
+      line.textContent = '리니어 오프셋 보정 중...';
+      const result = await postJson('/api/offset/calibrate', { group: 'linear' });
+      if (!result.ok || !result.data.ok) {
+        line.textContent = result.data.message || '리니어 보정 실패';
+        return;
+      }
+      if (typeof window.renderOffsetStatus === 'function') {
+        window.renderOffsetStatus(result.data, { open: true });
+      }
+      const summary = (typeof window.formatOffsetSummary === 'function')
+        ? window.formatOffsetSummary(result.data, 'linear')
+        : '';
+      line.textContent = summary
+        ? ('리니어 제로 완료 · ' + summary)
+        : ('리니어 제로 완료 · ' + (result.data.count || 1) + '장비');
+      scheduleOffsetVerification();
+    });
+
+    document.getElementById('offsetAccelButton').addEventListener('click', async () => {
+      const line = document.getElementById('offsetLine');
+      line.textContent = '가속도 오프셋 보정 중...';
+      const result = await postJson('/api/offset/calibrate', { group: 'accel' });
+      if (!result.ok || !result.data.ok) {
+        line.textContent = result.data.message || '가속도 보정 실패';
+        return;
+      }
+      if (typeof window.renderOffsetStatus === 'function') {
+        window.renderOffsetStatus(result.data, { open: true });
+      }
+      const summary = (typeof window.formatOffsetSummary === 'function')
+        ? window.formatOffsetSummary(result.data, 'accel')
+        : '';
+      line.textContent = summary
+        ? ('가속도 보정 완료 · ' + summary)
+        : ('가속도 보정 완료 · ' + (result.data.count || 1) + '장비');
+      scheduleOffsetVerification();
+    });
+
+    document.getElementById('offsetVerifyButton').addEventListener('click', () => {
+      document.getElementById('offsetLine').textContent = '정지 상태 3초 데이터를 모으는 중...';
+      window.setTimeout(runOffsetVerification, 3000);
+    });
+
+    document.getElementById('offsetResetButton').addEventListener('click', async () => {
+      const line = document.getElementById('offsetLine');
+      const result = await postJson('/api/offset/reset', {});
+      if (!result.ok || !result.data.ok) {
+        line.textContent = result.data.message || '오프셋 초기화 실패';
+        return;
+      }
+      if (typeof window.renderOffsetStatus === 'function') {
+        window.renderOffsetStatus(result.data || { offset_device_count: 0, offset_sensor_count: 0, items: [] });
+      } else {
+        await refreshOffsetStatus();
+      }
+      document.getElementById('offsetVerifyList').innerHTML = '';
+      line.textContent = result.data.message || '오프셋이 초기화되었습니다.';
+    });
+
     document.getElementById('startButton').addEventListener('click', async () => {
-      const result = await postJson('/api/logging/start');
+      const label = (document.getElementById('logLabelInput')?.value || '').trim();
+      const result = await postJson('/api/logging/start', { label });
       if (!result.ok) {
         document.getElementById('statusLine').textContent = result.data.message || '로깅 시작 실패';
         return;
       }
-      document.getElementById('statusLine').textContent =
-        '로깅+녹화 시작됨' +
-        (result.data.camera_recording && result.data.camera_recording.armed ? ' (카메라 프레임 대기)' : '');
+      const cam = result.data.camera_recording || {};
+      let camMsg = '';
+      if (cam.ok && cam.active) camMsg = ' · RTSP 녹화 시작';
+      else if (cam.armed) camMsg = ' · 카메라 송출 대기(로깅은 진행 중)';
+      else if (cam.linked && cam.message) camMsg = ' · 카메라: ' + cam.message;
+      else if (cam.linked) camMsg = ' · RTSP 연동 시도됨';
+      const nameMsg = result.data.label ? ' · ' + result.data.label : '';
+      document.getElementById('statusLine').textContent = '로깅 시작됨' + nameMsg + camMsg;
+      document.getElementById('sessionReport').hidden = true;
       refreshAll();
     });
 
     document.getElementById('stopButton').addEventListener('click', async () => {
+      document.getElementById('statusLine').textContent = '로깅+RTSP 중지 중...';
       const result = await postJson('/api/logging/stop');
       if (!result.ok || !result.data.ok) {
-        document.getElementById('statusLine').textContent = result.data.message || '로깅+녹화 중지 실패';
+        const cam = result.data.camera_recording || {};
+        document.getElementById('statusLine').textContent =
+          (result.data.message || '로깅+녹화 중지 실패') +
+          (cam.message ? ' · 카메라: ' + cam.message : '');
+        refreshAll();
         return;
       }
       const camera = result.data.camera_recording || {};
+      const camOk = result.data.camera_stopped !== false && camera.ok !== false;
+      let camMsg = '';
+      if (camOk && camera.filename) camMsg = ' · 영상 중지 ' + camera.filename;
+      else if (camOk) camMsg = ' · RTSP 녹화 중지됨';
+      else camMsg = ' · ⚠ 카메라 미중지: ' + (camera.message || result.data.message || '');
       document.getElementById('statusLine').textContent =
-        '로깅 완료: ' + (result.data.filename || '') + ' (' + formatBytes(result.data.download_bytes) + ')' +
-        (result.data.part_count > 1 ? ' / ' + result.data.part_count + ' parts' : '') +
-        (camera.filename ? ' · 영상: ' + camera.filename : '');
+        '로깅+RTSP 중지 완료: ' + (result.data.filename || '') + ' (' + formatBytes(result.data.download_bytes) + ')' +
+        camMsg +
+        (result.data.part_count > 1 ? ' / ' + result.data.part_count + ' parts' : '');
       renderCompleted(result.data.completed_sessions || []);
+      renderSessionReport(result.data.report);
+      refreshPreflight(true);
       refreshAll();
+      loadArchiveCalendar(selectedYmd() || archiveCalendar.latest || '');
     });
 
+    document.getElementById('archiveYear').addEventListener('change', () => {
+      syncMonthDaySelectors(selectedYmd());
+      loadArchiveFiles();
+    });
+    document.getElementById('archiveMonth').addEventListener('change', () => {
+      syncMonthDaySelectors(selectedYmd());
+      loadArchiveFiles();
+    });
+    document.getElementById('archiveDay').addEventListener('change', loadArchiveFiles);
+    document.getElementById('archiveReload').addEventListener('click', () => loadArchiveCalendar(selectedYmd()));
+
     refreshAll();
+    loadArchiveCalendar();
     setInterval(refreshAll, 1000);
   </script>
 </body>

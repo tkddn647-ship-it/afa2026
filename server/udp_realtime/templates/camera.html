@@ -518,9 +518,12 @@
   <div class="stage">
     <div class="controls">
       {% include "partials/server_nav.html" %}
-      <button id="startButton" class="desktop-only" type="button">HUD 녹화</button>
+      <button id="rtspStartButton" type="button">RTSP 녹화</button>
+      <button id="rtspStopButton" class="stop" type="button" disabled>RTSP 중지</button>
+      <button id="startButton" class="desktop-only" type="button">HUD 녹화(HTTP)</button>
       <button id="stopButton" class="stop desktop-only" type="button" disabled>HUD 중지</button>
       <button id="toggleFiles" class="desktop-only" type="button">녹화 목록<span id="recordingsBadge"></span></button>
+      <span id="modeChip" class="desktop-only">모드 확인 중...</span>
       <span id="storageChip" class="desktop-only">저장공간 확인 중...</span>
       <span id="status" class="desktop-only">로딩 중</span>
     </div>
@@ -588,6 +591,15 @@
   </div>
 
   <script>
+    // nginx path proxy (/camera/) — absolute /api 는 로깅 서버로 감
+    const APP_BASE = (() => {
+      const m = location.pathname.match(/^(\/camera)(?=\/|$)/);
+      return m ? m[1] : '';
+    })();
+    function apiUrl(path) {
+      const p = path.startsWith('/') ? path : ('/' + path);
+      return APP_BASE + p;
+    }
     const TELEMETRY_POLL_MS = {{ telemetry_poll_ms }};
     const PREVIEW_POLL_MS = {{ preview_poll_ms }};
     const mobileView = window.matchMedia('(max-width: 768px)');
@@ -629,7 +641,7 @@
       cameraFrameBusy = true;
       const img = document.getElementById('streamImage');
       try {
-        const res = await fetch('/api/camera/latest.jpg?_=' + Date.now(), { cache: 'no-store' });
+        const res = await fetch(apiUrl('/api/camera/latest.jpg') + '?_=' + Date.now(), { cache: 'no-store' });
         if (res.ok && res.status !== 204) {
           const blob = await res.blob();
           if (blob.size > 0) {
@@ -718,7 +730,7 @@
     }
 
     async function postJson(url, payload) {
-      const res = await fetch(url, {
+      const res = await fetch(apiUrl(url), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload || {}),
@@ -795,7 +807,7 @@
 
     async function deleteRecording(name) {
       try {
-        const res = await fetch('/api/recordings/' + encodeURIComponent(name), { method: 'DELETE' });
+        const res = await fetch(apiUrl('/api/recordings/' + encodeURIComponent(name)), { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.message || '삭제 실패');
         setStatus(name + ' 삭제됨');
@@ -807,24 +819,43 @@
 
     async function refreshStatus() {
       try {
-        const res = await fetch('/api/recording/status', { cache: 'no-store' });
+        const res = await fetch(apiUrl('/api/recording/status'), { cache: 'no-store' });
         const data = await res.json();
         const active = Boolean(data.active);
         const diskOk = data.disk_ok !== false;
         const ffmpegReady = data.ffmpeg_available !== false || data.record_format !== 'mp4';
+        const mode = String(data.record_mode_config || data.record_mode || 'rtsp').toLowerCase();
+        const activeMode = String(data.record_mode || '').toLowerCase();
+        const isHud = data.capture_source === 'hud' || activeMode === 'http-jpeg';
+        const isRtspActive = active && !isHud;
         updateStorageDisplay(data);
+        const modeChip = document.getElementById('modeChip');
+        if (modeChip) {
+          modeChip.textContent = mode === 'rtsp'
+            ? ('서버 모드 RTSP · ' + (data.rtsp_url_config || data.rtsp_url || 'rtsp://…/cam'))
+            : ('서버 모드 ' + mode.toUpperCase());
+        }
+        const rtspStart = document.getElementById('rtspStartButton');
+        const rtspStop = document.getElementById('rtspStopButton');
+        if (rtspStart) rtspStart.disabled = active || !diskOk || !ffmpegReady || mode !== 'rtsp';
+        if (rtspStop) rtspStop.disabled = !isRtspActive;
         document.getElementById('startButton').disabled = active || !diskOk || !ffmpegReady;
-        document.getElementById('stopButton').disabled = !active;
+        document.getElementById('stopButton').disabled = !(active && isHud);
         if (active) {
-          const label = data.capture_source === 'hud' ? 'HUD 녹화 중' : '녹화 중';
-          setStatus(label + ' ' + (data.filename || '') + ' / ' + formatMb(data.bytes_written));
+          if (isHud) {
+            setStatus('HUD(HTTP JPEG) 녹화 중 ' + (data.filename || '') + ' / ' + formatMb(data.bytes_written));
+          } else {
+            setStatus('RTSP 녹화 중 ' + (data.filename || '') + ' / ' + formatMb(data.bytes_written));
+          }
         } else if (!diskOk) {
           const freeMb = Math.floor(Number((data.disk || {}).free_bytes || 0) / 1024 / 1024);
           setStatus('디스크 부족 — 여유 ' + freeMb + 'MB (최소 64MB 필요)');
         } else if (!ffmpegReady) {
           setStatus('MP4 준비 안 됨 — install_ffmpeg.sh 실행 필요');
         } else if (!polling) {
-          setStatus('대기 중 · HUD 전체 화면 · ' + (data.record_format || 'mp4').toUpperCase());
+          setStatus(mode === 'rtsp'
+            ? '대기 중 · RTSP 녹화 준비됨 (Pi → MediaMTX:8554/cam)'
+            : ('대기 중 · ' + mode.toUpperCase()));
         }
         renderRecordings(data.recent_files || []);
       } catch (err) {
@@ -984,7 +1015,7 @@
       if (!blob || hudFrameUploading) return;
       hudFrameUploading = true;
       try {
-        await fetch('/api/recording/frame', {
+        await fetch(apiUrl('/api/recording/frame'), {
           method: 'POST',
           body: blob,
           headers: { 'Content-Type': 'image/jpeg' },
@@ -1016,12 +1047,42 @@
       hudFrameUploading = false;
     }
 
-    document.getElementById('startButton').onclick = async () => {
-      if (isMobileView()) {
-        setStatus('HUD 녹화는 데스크톱 화면에서만 가능합니다.');
+    document.getElementById('rtspStartButton').onclick = async () => {
+      setStatus('RTSP 녹화 시작 요청 중...');
+      document.getElementById('rtspStartButton').disabled = true;
+      const { ok, data } = await postJson('/api/recording/start', {
+        capture: 'camera',
+      });
+      if (!ok || !data.ok) {
+        document.getElementById('rtspStartButton').disabled = false;
+        setStatus('RTSP 녹화 실패: ' + (data.message || 'Pi RTSP 송출(MediaMTX:8554/cam) 확인'));
         return;
       }
-      setStatus('HUD 녹화 시작 요청 중...');
+      setStatus('RTSP 녹화 시작: ' + (data.filename || '') + ' · mode=' + (data.record_mode || 'rtsp'));
+      await refreshStatus();
+    };
+
+    document.getElementById('rtspStopButton').onclick = async () => {
+      setStatus('RTSP 녹화 중지 요청 중...');
+      document.getElementById('rtspStopButton').disabled = true;
+      stopHudCaptureLoop();
+      const { ok, data } = await postJson('/api/recording/stop');
+      if (!ok || !data.ok) {
+        setStatus('RTSP 중지 실패: ' + (data.message || '진행 중인 녹화 없음'));
+      } else {
+        const rec = data.recording || {};
+        setStatus('RTSP 녹화 완료 ' + (rec.filename || '') + ' · mode=' + (rec.record_mode || 'rtsp'));
+        setRecordingsOpen(true);
+      }
+      await refreshStatus();
+    };
+
+    document.getElementById('startButton').onclick = async () => {
+      if (isMobileView()) {
+        setStatus('HUD(HTTP) 녹화는 데스크톱 화면에서만 가능합니다.');
+        return;
+      }
+      setStatus('HUD(HTTP JPEG) 녹화 시작 요청 중...');
       document.getElementById('startButton').disabled = true;
       const { ok, data } = await postJson('/api/recording/start', {
         capture: 'hud',
@@ -1031,10 +1092,10 @@
       });
       if (!ok || !data.ok) {
         document.getElementById('startButton').disabled = false;
-        setStatus('녹화 시작 실패: ' + (data.message || '알 수 없는 오류'));
+        setStatus('HUD 녹화 시작 실패: ' + (data.message || '알 수 없는 오류'));
         return;
       }
-      setStatus('HUD 녹화 시작: ' + (data.filename || ''));
+      setStatus('HUD(HTTP) 녹화 시작: ' + (data.filename || '') + ' · mode=' + (data.record_mode || 'http-jpeg'));
       startHudCaptureLoop();
       await refreshStatus();
     };
@@ -1048,7 +1109,7 @@
         setStatus('녹화 중지 실패: ' + (data.message || '진행 중인 녹화 없음'));
       } else {
         const rec = data.recording || {};
-        setStatus('녹화 완료 ' + (rec.filename || '') + ' / ' + (rec.frames_written || 0) + ' frames · HUD 포함');
+        setStatus('HUD 녹화 완료 ' + (rec.filename || '') + ' / ' + (rec.frames_written || 0) + ' frames');
         setRecordingsOpen(true);
       }
       await refreshStatus();
@@ -1210,7 +1271,7 @@
 
     async function pollTelemetry() {
       try {
-        const snapshot = await fetch('/api/telemetry/snapshot', { cache: 'no-store' }).then((r) => r.json());
+        const snapshot = await fetch(apiUrl('/api/telemetry/snapshot'), { cache: 'no-store' }).then((r) => r.json());
         applyTelemetry(snapshot);
       } catch (err) {
         applyTelemetry({ ok: false });
@@ -1219,7 +1280,7 @@
 
     async function pollCamera() {
       try {
-        const data = await fetch('/api/camera/latest', { cache: 'no-store' }).then((r) => r.json());
+        const data = await fetch(apiUrl('/api/camera/latest'), { cache: 'no-store' }).then((r) => r.json());
         if (data.seq > 0 && data.updated_at) {
           markStreamLive();
         }

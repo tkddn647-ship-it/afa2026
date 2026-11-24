@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 import signal
 import struct
 import base64
@@ -11,6 +12,7 @@ import threading
 import urllib.error
 import urllib.request
 import zipfile
+from collections import deque
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +26,7 @@ from fastapi.templating import Jinja2Templates
 
 from nav_config import CAMERA_URL, nav_context
 from afa_auth import install_auth
+from rtsp_rtcp_probe import RtspRtcpProbe
 
 app = FastAPI()
 install_auth(app)
@@ -42,7 +45,8 @@ PUBLIC_BASE_URL = os.getenv("CAMERA_PUBLIC_BASE_URL", CAMERA_URL).rstrip("/")
 MAX_RECORDING_BYTES = int(os.getenv("CAMERA_MAX_RECORDING_BYTES", str(512 * 1024 * 1024)))
 MIN_FREE_DISK_BYTES = int(os.getenv("CAMERA_MIN_FREE_BYTES", str(64 * 1024 * 1024)))
 MAX_FRAME_BYTES = int(os.getenv("CAMERA_MAX_FRAME_BYTES", str(4 * 1024 * 1024)))
-MAX_RECORD_FRAMES = int(os.getenv("CAMERA_MAX_RECORD_FRAMES", "36000"))
+# 0 = 무제한. 기본 172800 = 2시간 @ 24fps
+MAX_RECORD_FRAMES = int(os.getenv("CAMERA_MAX_RECORD_FRAMES", str(2 * 3600 * 24)))
 FFMPEG_FINALIZE_TIMEOUT_SEC = int(os.getenv("CAMERA_RECORD_FFMPEG_TIMEOUT_SEC", "600"))
 LOCAL_FFMPEG = BASE_DIR / "bin" / "ffmpeg"
 LOGGER_SNAPSHOT_URL = os.getenv("LOGGER_SNAPSHOT_URL", "").strip()
@@ -54,6 +58,10 @@ RTSP_TRANSPORT = os.getenv("CAMERA_RTSP_TRANSPORT", "tcp").strip().lower() or "t
 RTSP_SEGMENT_SECONDS = int(os.getenv("CAMERA_RTSP_SEGMENT_SECONDS", "0"))
 RTSP_PREVIEW_ENABLED = os.getenv("CAMERA_RTSP_PREVIEW", "1").strip().lower() in {"1", "true", "yes", "on"}
 RTSP_PREVIEW_INTERVAL_SEC = float(os.getenv("CAMERA_RTSP_PREVIEW_INTERVAL_SEC", "0.5"))
+RTCP_PROBE_TIMEOUT_SEC = float(os.getenv("CAMERA_RTCP_PROBE_TIMEOUT_SEC", "12"))
+# 좌우반전은 녹화 중(copy)이 아니라 종료 후처리에서만 적용
+CAMERA_HFLIP = os.getenv("CAMERA_HFLIP", "1").strip().lower() in {"1", "true", "yes", "on"}
+CAMERA_RECORD_CRF = os.getenv("CAMERA_RECORD_CRF", "28").strip() or "28"
 
 camera_state: dict[str, Any] = {
     "mime": "image/jpeg",
@@ -78,6 +86,7 @@ recording_writer: Any = None
 recording_state: dict[str, Any] = {
     "active": False,
     "session_id": "",
+    "recording_id": "",
     "filename": "",
     "mode": "",
     "mime": "",
@@ -94,6 +103,7 @@ recording_state: dict[str, Any] = {
     "record_mode": RECORD_MODE,
     "rtsp_url": RTSP_URL,
     "segments": [],
+    "rtp_sync": {},
 }
 armed_recording: dict[str, Any] | None = None
 _rtsp_preview_thread: threading.Thread | None = None
@@ -346,6 +356,16 @@ class FfmpegRtspRecorder:
         self.segment_seconds = max(0, int(segment_seconds))
         self.continuous = self.segment_seconds <= 0
         self.frame_count = 0
+        self._sync_lock = threading.Lock()
+        self._stderr_tail: deque[str] = deque(maxlen=30)
+        self._recorder_rtp: dict[str, Any] = {
+            "status": "pending",
+            "rtp_clock_rate": 90000,
+        }
+        self._rtcp_probe = RtspRtcpProbe(
+            rtsp_url,
+            timeout_sec=RTCP_PROBE_TIMEOUT_SEC,
+        )
         ffmpeg_bin = _ffmpeg_binary()
         if not ffmpeg_bin:
             raise RuntimeError("ffmpeg not found")
@@ -363,7 +383,7 @@ class FfmpegRtspRecorder:
                 "-y",
                 "-hide_banner",
                 "-loglevel",
-                "error",
+                "trace",
                 "-rtsp_transport",
                 RTSP_TRANSPORT,
                 "-i",
@@ -386,7 +406,7 @@ class FfmpegRtspRecorder:
                 "-y",
                 "-hide_banner",
                 "-loglevel",
-                "error",
+                "trace",
                 "-rtsp_transport",
                 RTSP_TRANSPORT,
                 "-i",
@@ -409,21 +429,77 @@ class FfmpegRtspRecorder:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
+        self._stderr_thread = threading.Thread(
+            target=self._read_stderr,
+            name="ffmpeg-rtp-metadata",
+            daemon=True,
+        )
+        self._stderr_thread.start()
         sleep(0.4)
         if self.proc.poll() is not None:
-            stderr = ""
-            if self.proc.stderr is not None:
-                stderr = self.proc.stderr.read().decode("utf-8", errors="replace").strip()
-            raise RuntimeError(stderr or "RTSP recorder exited immediately (스트림 연결 실패)")
+            self._stderr_thread.join(timeout=0.5)
+            raise RuntimeError(
+                self._stderr_text()
+                or "RTSP recorder exited immediately (스트림 연결 실패)"
+            )
+        self._rtcp_probe.start()
+
+    def _read_stderr(self) -> None:
+        stream = self.proc.stderr
+        if stream is None:
+            return
+        for raw_line in stream:
+            line = raw_line.strip()
+            if not line:
+                continue
+            if "RTP-Info:" in line or "Transport:" in line or "error" in line.lower():
+                self._stderr_tail.append(line)
+            transport = re.search(r"Transport:.*ssrc=([0-9A-Fa-f]+)", line)
+            if transport:
+                with self._sync_lock:
+                    self._recorder_rtp["ssrc"] = int(transport.group(1), 16)
+            rtp_info = re.search(
+                r"RTP-Info:.*?seq=(\d+);rtptime=(\d+)",
+                line,
+            )
+            if rtp_info:
+                with self._sync_lock:
+                    self._recorder_rtp.update(
+                        {
+                            "status": "ready",
+                            "first_sequence": int(rtp_info.group(1)),
+                            "first_rtp_timestamp": int(rtp_info.group(2)),
+                        }
+                    )
+
+    def _stderr_text(self) -> str:
+        return "\n".join(self._stderr_tail)
+
+    def sync_metadata(self) -> dict[str, Any]:
+        with self._sync_lock:
+            recorder = dict(self._recorder_rtp)
+        rtcp_sr = self._rtcp_probe.snapshot()
+        recorder_ssrc = recorder.get("ssrc")
+        sr_ssrc = rtcp_sr.get("ssrc")
+        ssrc_match = (
+            recorder_ssrc is not None
+            and sr_ssrc is not None
+            and int(recorder_ssrc) == int(sr_ssrc)
+        )
+        return {
+            "recorder": recorder,
+            "rtcp_sr": rtcp_sr,
+            "ssrc_match": ssrc_match,
+            "mapping_source": "ffmpeg_rtp_info+mediamtx_rtcp_sr",
+        }
 
     def write(self, jpeg_bytes: bytes) -> None:
         # RTSP mode ignores JPEG frames; keep API compatible.
         if self.proc.poll() is not None:
-            stderr = ""
-            if self.proc.stderr is not None:
-                stderr = self.proc.stderr.read().decode("utf-8", errors="replace").strip()
-            raise RuntimeError(stderr or "RTSP recorder stopped")
+            raise RuntimeError(self._stderr_text() or "RTSP recorder stopped")
         self.frame_count += 1
 
     def list_segments(self) -> list[Path]:
@@ -435,7 +511,6 @@ class FfmpegRtspRecorder:
         return sorted(parent.glob(f"{self._stem}-*.mp4"))
 
     def release(self) -> None:
-        stderr_text = ""
         if self.proc.poll() is None:
             with suppress(Exception):
                 self.proc.send_signal(signal.SIGINT)
@@ -446,9 +521,9 @@ class FfmpegRtspRecorder:
                 raise RuntimeError("RTSP recorder finalize timed out")
         else:
             return_code = self.proc.returncode or 0
-        if self.proc.stderr is not None:
-            with suppress(Exception):
-                stderr_text = self.proc.stderr.read().decode("utf-8", errors="replace").strip()
+        self._stderr_thread.join(timeout=1.0)
+        self._rtcp_probe.stop()
+        stderr_text = self._stderr_text()
         segments = self.list_segments()
         # ffmpeg often exits 255 on SIGINT after a clean flush
         if not segments and return_code not in (0, 255):
@@ -575,6 +650,76 @@ def _finalize_recording_file(source: Path) -> tuple[Path, dict[str, Any]]:
     if not source.exists():
         return source, {"compressed": False, "stored_bytes": 0}
     return _zip_recording_file(source)
+
+
+def _remux_mp4_faststart(source: Path) -> tuple[Path, dict[str, Any]]:
+    """RTSP fragmented MP4 finalize. 녹화 중엔 copy, 종료 후 (선택) hflip+faststart."""
+    meta: dict[str, Any] = {"faststart": False, "hflip": False, "path": str(source)}
+    if not source.exists() or source.suffix.lower() != ".mp4":
+        return source, meta
+    ffmpeg_bin = _ffmpeg_binary()
+    if not ffmpeg_bin:
+        return source, meta
+    tmp = source.with_name(f".{source.stem}.faststart.tmp.mp4")
+    tmp.unlink(missing_ok=True)
+    cmd = [
+        ffmpeg_bin,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source),
+        "-an",
+    ]
+    if CAMERA_HFLIP:
+        cmd.extend(
+            [
+                "-vf",
+                "hflip",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                CAMERA_RECORD_CRF,
+                "-pix_fmt",
+                "yuv420p",
+            ]
+        )
+        meta["hflip"] = True
+    else:
+        cmd.extend(["-c", "copy"])
+    cmd.extend(["-movflags", "+faststart", str(tmp)])
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            check=False,
+            timeout=max(120, min(1800, FFMPEG_FINALIZE_TIMEOUT_SEC * 10)),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        tmp.unlink(missing_ok=True)
+        meta["error"] = str(exc)
+        return source, meta
+    if proc.returncode != 0 or not tmp.is_file() or tmp.stat().st_size <= 0:
+        err = (proc.stderr or b"").decode("utf-8", errors="replace").strip()
+        tmp.unlink(missing_ok=True)
+        meta["error"] = err or f"ffmpeg exited {proc.returncode}"
+        return source, meta
+    try:
+        tmp.replace(source)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        meta["error"] = str(exc)
+        return source, meta
+    meta["faststart"] = True
+    meta["stored_bytes"] = source.stat().st_size
+    print(
+        f"[recording] finalize ok file={source.name} "
+        f"hflip={meta['hflip']} bytes={meta['stored_bytes']}"
+    )
+    return source, meta
 
 
 def _ffmpeg_binary() -> str:
@@ -747,6 +892,7 @@ def stop_recording(message: str = "") -> None:
                 segments = writer.list_segments()
                 total_bytes = sum(p.stat().st_size for p in segments if p.exists())
                 with recording_lock:
+                    recording_state["rtp_sync"] = writer.sync_metadata()
                     recording_state["segments"] = [p.name for p in segments]
                     recording_state["bytes_written"] = total_bytes
                     recording_state["frames_written"] = max(
@@ -888,6 +1034,59 @@ def _grab_rtsp_preview_once() -> bool:
     return True
 
 
+def _try_start_armed_rtsp() -> None:
+    global armed_recording
+    with recording_lock:
+        if recording_state["active"] or not armed_recording:
+            return
+        if str(armed_recording.get("capture") or "camera") == "hud":
+            return
+        body = dict(armed_recording)
+    result = _start_recording_core(body)
+    if result.get("ok"):
+        with recording_lock:
+            armed_recording = None
+        print(f"[recording] armed RTSP started file={result.get('filename')}")
+
+
+def _resolve_max_frames(requested: int) -> int:
+    """요청값 > 0 이면 그 값, 아니면 env CAMERA_MAX_RECORD_FRAMES(0=무제한)."""
+    req = max(0, int(requested or 0))
+    if req > 0:
+        return req
+    return max(0, int(MAX_RECORD_FRAMES or 0))
+
+
+def _maybe_stop_rtsp_on_frame_budget() -> None:
+    """RTSP는 프레임을 세지 않으므로 max_frames / fps 를 시간 상한으로 적용."""
+    if not recording_state.get("active"):
+        return
+    if str(recording_state.get("record_mode") or "") != "rtsp":
+        return
+    limit = int(recording_state.get("max_frames") or 0)
+    if limit <= 0:
+        return
+    started_raw = str(recording_state.get("started_at") or "").strip()
+    if not started_raw:
+        return
+    try:
+        started = datetime.fromisoformat(started_raw)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        fps = float(recording_state.get("fps") or DEFAULT_RECORD_FPS)
+        max_sec = limit / max(fps, 1.0)
+        elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    except Exception:
+        return
+    if elapsed < max_sec:
+        return
+    hours = max_sec / 3600.0
+    stop_recording(
+        f"녹화 상한({limit} frames ≈ {hours:.1f}h @ {fps:g}fps)에 도달해 중지합니다."
+    )
+    print(f"[recording] stopped RTSP at frame-budget {limit} (~{hours:.1f}h)")
+
+
 def _rtsp_preview_loop() -> None:
     while not _rtsp_preview_stop.is_set():
         # Health-check active RTSP recorder
@@ -900,7 +1099,12 @@ def _rtsp_preview_loop() -> None:
             and writer.proc.poll() is not None
         ):
             stop_recording("RTSP 녹화 프로세스가 종료되었습니다. 스트림 연결을 확인하세요.")
-        if RTSP_PREVIEW_ENABLED and RECORD_MODE == "rtsp":
+        _maybe_stop_rtsp_on_frame_budget()
+        if RECORD_MODE == "rtsp" and armed_recording and not recording_state.get("active"):
+            # MediaMTX publisher가 붙으면 armed 세션을 자동 시작
+            if _grab_rtsp_preview_once():
+                _try_start_armed_rtsp()
+        elif RTSP_PREVIEW_ENABLED and RECORD_MODE == "rtsp":
             _grab_rtsp_preview_once()
         _rtsp_preview_stop.wait(max(0.3, RTSP_PREVIEW_INTERVAL_SEC))
 
@@ -1075,6 +1279,7 @@ def recording_status() -> dict[str, Any]:
                 for name in segments
                 if (RECORDINGS_DIR / name).exists()
             )
+            recording_state["rtp_sync"] = writer.sync_metadata()
         return {
             "ok": True,
             **recording_state,
@@ -1089,6 +1294,12 @@ def recording_status() -> dict[str, Any]:
             "recent_files": list_recordings(),
             "storage_bytes": recording_storage_bytes(),
             "max_storage_bytes": MAX_RECORDING_BYTES,
+            "max_record_frames_config": MAX_RECORD_FRAMES,
+            "max_record_hours_config": (
+                round(MAX_RECORD_FRAMES / max(DEFAULT_RECORD_FPS, 1.0) / 3600.0, 2)
+                if MAX_RECORD_FRAMES > 0
+                else 0
+            ),
             "disk": _disk_usage(RECORDINGS_DIR),
             "disk_min_free_bytes": MIN_FREE_DISK_BYTES,
             "disk_ok": _disk_free_ok(RECORDINGS_DIR)[0],
@@ -1137,9 +1348,10 @@ def _start_recording_core(
             return {"ok": False, "message": "no camera frame has been received yet"}
 
     fps = max(1.0, min(60.0, _safe_float(body.get("fps"), DEFAULT_RECORD_FPS)))
-    max_frames = max(0, _safe_int(body.get("max_frames"), 0))
+    max_frames = _resolve_max_frames(_safe_int(body.get("max_frames"), 0))
     started_at = datetime.now(timezone.utc)
     session_id = str(body.get("session_id") or "").strip() or started_at.strftime("%Y%m%dT%H%M%SZ")
+    recording_id = str(body.get("recording_id") or "").strip()
 
     if not use_rtsp and (width <= 0 or height <= 0):
         return {"ok": False, "message": "프레임 크기를 아직 알 수 없어 녹화를 시작할 수 없습니다."}
@@ -1204,6 +1416,7 @@ def _start_recording_core(
             {
                 "active": True,
                 "session_id": session_id,
+                "recording_id": recording_id,
                 "filename": target.name,
                 "mode": "rtsp-mp4" if use_rtsp else record_format,
                 "mime": "video/mp4" if record_format == "mp4" else "video/x-msvideo",
@@ -1220,10 +1433,11 @@ def _start_recording_core(
                     if capture_source == "hud"
                     else ("RTSP 녹화를 시작했습니다." if use_rtsp else "녹화를 시작했습니다.")
                 ),
-                "max_frames": 0 if use_rtsp else max_frames,
+                "max_frames": max_frames,
                 "record_mode": "rtsp" if use_rtsp else "http-jpeg",
                 "rtsp_url": rtsp_url if use_rtsp else "",
                 "segments": [],
+                "rtp_sync": {},
             }
         )
 
@@ -1282,14 +1496,34 @@ async def recording_arm(request: Request) -> dict[str, Any]:
         if recording_state["active"]:
             return {"ok": True, "already_active": True, **recording_state}
 
-    # RTSP mode can start without waiting for HTTP JPEG frames.
+    # RTSP: 즉시 시작 시도. 스트림 없으면 armed 대기 → preview loop가 재시도.
     if RECORD_MODE == "rtsp":
         result = _start_recording_core(body)
         if result.get("ok"):
             with recording_lock:
                 armed_recording = None
             return result
-        return {**result, "armed": False}
+        with recording_lock:
+            armed_recording = {
+                "session_id": str(body.get("session_id") or ""),
+                "recording_id": str(body.get("recording_id") or ""),
+                "filename": str(body.get("filename") or ""),
+                "fps": body.get("fps"),
+                "format": body.get("format"),
+                "capture": body.get("capture", "camera"),
+                "max_frames": body.get("max_frames", 0),
+                "rtsp_url": body.get("rtsp_url"),
+                "segment_seconds": body.get("segment_seconds"),
+            }
+        return {
+            "ok": True,
+            "armed": True,
+            "record_mode": "rtsp",
+            "session_id": str(body.get("session_id") or ""),
+            "recording_id": str(body.get("recording_id") or ""),
+            "message": "RTSP 스트림 대기 중 — MediaMTX에 송출되면 자동 시작합니다.",
+            "start_error": result.get("message", ""),
+        }
 
     frame_bytes, snapshot = latest_camera_bytes()
     if frame_bytes:
@@ -1302,6 +1536,7 @@ async def recording_arm(request: Request) -> dict[str, Any]:
     with recording_lock:
         armed_recording = {
             "session_id": str(body.get("session_id") or ""),
+            "recording_id": str(body.get("recording_id") or ""),
             "filename": str(body.get("filename") or ""),
             "fps": body.get("fps"),
             "format": body.get("format"),
@@ -1312,6 +1547,7 @@ async def recording_arm(request: Request) -> dict[str, Any]:
         "ok": True,
         "armed": True,
         "session_id": str(body.get("session_id") or ""),
+        "recording_id": str(body.get("recording_id") or ""),
         "message": "카메라 프레임 수신 시 녹화가 시작됩니다.",
     }
 
@@ -1376,8 +1612,23 @@ def recording_stop() -> dict[str, Any]:
                 "recording": finished,
                 "recent_files": list_recordings(),
             }
+        # remux는 대용량에서 오래 걸리므로 응답 후 백그라운드 처리 (로거 연동 stop이 타임아웃 나지 않게)
+        segment_names = [Path(name).name for name in segments]
+
+        def _bg_remux() -> None:
+            for name in segment_names:
+                target = RECORDINGS_DIR / name
+                if target.is_file():
+                    with suppress(Exception):
+                        _remux_mp4_faststart(target)
+
+        threading.Thread(target=_bg_remux, name="rtsp-faststart-remux", daemon=True).start()
         finished["filename"] = segments[0]
         finished["file_size"] = int(finished.get("bytes_written") or 0)
+        first = RECORDINGS_DIR / Path(segments[0]).name
+        if first.is_file():
+            finished["file_size"] = first.stat().st_size
+        finished["faststart_remux"] = "pending"
         finished["download_url"] = f"{PUBLIC_BASE_URL}/api/recordings/{segments[0]}"
         finished["segment_urls"] = [f"{PUBLIC_BASE_URL}/api/recordings/{name}" for name in segments]
         deleted = cleanup_recordings()

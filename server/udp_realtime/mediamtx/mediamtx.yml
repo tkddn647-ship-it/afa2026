@@ -1,8 +1,23 @@
 logLevel: warn
+
+# RTSP only (avoid default HLS/WebRTC/RTMP ports colliding)
 rtsp: yes
 rtspAddress: :8554
 rtpAddress: :8004
 rtcpAddress: :8005
+
+rtmp: no
+hls: no
+webrtc: no
+srt: no
+
+api: no
+metrics: no
+pprof: no
+playback: no
+
+# Pi publishes H264 here; camera_server pulls for recording/preview.
 paths:
   cam:
     source: publisher
+    overridePublisher: yes

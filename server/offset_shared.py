@@ -41,6 +41,14 @@ FLAT_LINEAR_KEYS: dict[str, str] = {
     "linear_fr": "car.linear.front_right",
     "linear_rl": "car.linear.rear_left",
     "linear_rr": "car.linear.rear_right",
+    "FL": "car.linear.front_left",
+    "FR": "car.linear.front_right",
+    "RL": "car.linear.rear_left",
+    "RR": "car.linear.rear_right",
+    "fl": "car.linear.front_left",
+    "fr": "car.linear.front_right",
+    "rl": "car.linear.rear_left",
+    "rr": "car.linear.rear_right",
 }
 
 ACCEL_SENSOR_PATHS: dict[str, str] = {
@@ -50,15 +58,43 @@ ACCEL_SENSOR_PATHS: dict[str, str] = {
     "ax": "car.accel.x",
     "ay": "car.accel.y",
     "az": "car.accel.z",
+    "x_g": "car.accel.x",
+    "y_g": "car.accel.y",
+    "z_g": "car.accel.z",
 }
 
 FLAT_ACCEL_KEYS: dict[str, str] = {
     "accelX": "car.accel.x",
     "accelY": "car.accel.y",
     "accelZ": "car.accel.z",
+    "x_g": "car.accel.x",
+    "y_g": "car.accel.y",
+    "z_g": "car.accel.z",
+}
+
+LINEAR_OFFSET_PATHS = {
+    "car.linear.front_left",
+    "car.linear.front_right",
+    "car.linear.rear_left",
+    "car.linear.rear_right",
+}
+ACCEL_OFFSET_PATHS = {
+    "car.accel.x",
+    "car.accel.y",
+    "car.accel.z",
 }
 
 ACCEL_CONTAINER_KEYS = ("accel", "accelerometer", "acceleration")
+
+
+def offset_paths_for_group(group: str) -> set[str] | None:
+    """group: linear | accel | all(None=전체)."""
+    g = (group or "all").strip().lower()
+    if g in {"linear", "suspension", "lin"}:
+        return set(LINEAR_OFFSET_PATHS)
+    if g in {"accel", "acceleration", "imu"}:
+        return set(ACCEL_OFFSET_PATHS)
+    return None
 
 
 def sensor_offset_label(path: str) -> str:
@@ -133,11 +169,31 @@ def raw_value_to_offset(sensor_path: str, raw_value: float) -> float:
     return raw_value
 
 
-def snapshot_to_offsets(snapshot: dict[str, float]) -> dict[str, float]:
-    return {
-        path: raw_value_to_offset(path, value)
-        for path, value in snapshot.items()
-    }
+def snapshot_to_offsets(snapshot: dict[str, float], group: str = "all") -> dict[str, float]:
+    allowed = offset_paths_for_group(group)
+    result: dict[str, float] = {}
+    for path, value in snapshot.items():
+        if allowed is not None and path not in allowed:
+            continue
+        result[path] = raw_value_to_offset(path, value)
+    return result
+
+
+def merge_device_offsets(
+    existing: dict[str, float] | None,
+    snapshot: dict[str, float],
+    group: str = "all",
+) -> dict[str, float]:
+    """부분 보정 시 기존 오프셋을 유지하고 해당 그룹만 갱신."""
+    new_offs = snapshot_to_offsets(snapshot, group=group)
+    allowed = offset_paths_for_group(group)
+    if allowed is None:
+        return new_offs
+    merged = dict(existing or {})
+    for path in allowed:
+        merged.pop(path, None)
+    merged.update(new_offs)
+    return merged
 
 
 def collect_parsed_nodes(parsed: dict[str, Any]) -> list[dict[str, Any]]:

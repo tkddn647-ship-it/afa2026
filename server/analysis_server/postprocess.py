@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +151,109 @@ def build_derived(parsed: dict[str, Any], spec: dict[str, Any] | None = None) ->
     }
 
 
+_CLOCK_RE = re.compile(r"(\d{1,2}:\d{2}:\d{2})")
+MOTOR_RPM_TO_KMH = 0.0222328
+
+
+def _speed_series(parsed: dict[str, Any]) -> tuple[list[float], str]:
+    series: dict[str, list[float | None]] = parsed.get("series") or {}
+    n = len(parsed.get("times") or [])
+    for key in ("vehicle_speed_kmh", "speed", "vehicle_speed"):
+        if key in series and len(series[key]) == n:
+            return [abs(num(v)) for v in series[key]], key
+    if "inv_motor_speed" in series and len(series["inv_motor_speed"]) == n:
+        return [abs(num(v)) * MOTOR_RPM_TO_KMH for v in series["inv_motor_speed"]], "inv_motor_speed"
+    return [0.0] * n, ""
+
+
+def _clock_label(raw: str | None, t_abs: float) -> str:
+    text = str(raw or "").strip()
+    if text:
+        m = _CLOCK_RE.search(text)
+        if m:
+            hh, mm, ss = m.group(1).split(":")
+            return f"{int(hh):02d}:{mm}:{ss}"
+    try:
+        return datetime.fromtimestamp(float(t_abs)).strftime("%H:%M:%S")
+    except (OSError, OverflowError, ValueError):
+        return ""
+
+
+def detect_drive_starts(
+    parsed: dict[str, Any],
+    *,
+    go_kmh: float = 6.0,
+    stop_kmh: float = 2.5,
+    min_stop_sec: float = 8.0,
+    min_run_sec: float = 2.0,
+) -> list[dict[str, Any]]:
+    """정지→출발 구간을 주행 시작으로 잡는다. 한 로그에 여러 런이 있으면 모두 반환."""
+    times: list[float] = parsed.get("times") or []
+    n = len(times)
+    if n < 3:
+        return []
+    t0 = float(parsed.get("t0") if parsed.get("t0") is not None else times[0])
+    speed, speed_key = _speed_series(parsed)
+    if not speed_key:
+        return []
+
+    raw_ts = parsed.get("raw_timestamps") or []
+    moving = speed[0] >= go_kmh
+    stopped_since = None if moving else float(times[0])
+    starts: list[dict[str, Any]] = []
+
+    def _run_holds(start_idx: int) -> bool:
+        t_end = float(times[start_idx]) + min_run_sec
+        for j in range(start_idx, n):
+            if float(times[j]) >= t_end:
+                return True
+            if speed[j] < stop_kmh:
+                return False
+        return float(times[-1]) - float(times[start_idx]) >= min_run_sec * 0.5
+
+    def _add(idx: int) -> None:
+        t_abs = float(times[idx])
+        raw = raw_ts[idx] if idx < len(raw_ts) else ""
+        starts.append(
+            {
+                "id": f"run_{len(starts) + 1:02d}",
+                "n": len(starts) + 1,
+                "index": idx,
+                "t_abs": round(t_abs, 3),
+                "t_rel": round(t_abs - t0, 3),
+                "clock": _clock_label(raw, t_abs),
+                "speed": round(speed[idx], 1),
+                "speed_key": speed_key,
+            }
+        )
+
+    found_first = False
+    if moving and _run_holds(0):
+        _add(0)
+        found_first = True
+
+    for i in range(1, n):
+        if moving:
+            if speed[i] < stop_kmh:
+                moving = False
+                stopped_since = float(times[i])
+            continue
+        if speed[i] < go_kmh:
+            if stopped_since is None:
+                stopped_since = float(times[i])
+            continue
+        stop_dur = float(times[i]) - float(stopped_since or times[i])
+        # 첫 출발은 로깅 직후 짧은 정지도 인정. 이후 런만 8초 이상 정지 후.
+        need_stop = min_stop_sec if found_first else 0.3
+        if stop_dur >= need_stop and _run_holds(i):
+            _add(i)
+            found_first = True
+        moving = True
+        stopped_since = None
+
+    return starts
+
+
 def detect_events(parsed: dict[str, Any], derived: dict[str, list[float]]) -> list[dict[str, Any]]:
     times: list[float] = parsed["times"]
     series: dict[str, list[float | None]] = parsed["series"]
@@ -230,16 +335,17 @@ def detect_events(parsed: dict[str, Any], derived: dict[str, list[float]]) -> li
             extra={"speed": round(speed[idx], 1), "lat_g": round(lat_g[idx], 3)},
         )
 
-    for idx in range(1, n):
-        if speed[idx - 1] < 5 and speed[idx] >= 5:
-            add_event(
-                "drive_start",
-                idx,
-                label="주행 시작",
-                value=speed[idx],
-                extra={"speed": round(speed[idx], 1)},
-            )
-            break
+    for start in detect_drive_starts(parsed):
+        add_event(
+            "drive_start",
+            int(start["index"]),
+            label=f"주행 시작 {start.get('clock') or start.get('t_rel')}",
+            value=float(start.get("speed") or 0.0),
+            extra={
+                "speed": start.get("speed"),
+                "clock": start.get("clock"),
+            },
+        )
 
     events.sort(key=lambda item: item["t_abs"])
     for i, evt in enumerate(events, start=1):

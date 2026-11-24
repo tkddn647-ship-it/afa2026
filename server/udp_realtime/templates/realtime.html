@@ -3,834 +3,1036 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>실시간 모니터링</title>
+  <title>AFA Realtime</title>
   <style>
     :root {
-      color-scheme: dark;
-      --bg0: #05080f;
-      --bg1: #0a101c;
-      --surface: rgba(16, 24, 40, 0.72);
-      --surface2: rgba(10, 16, 28, 0.9);
-      --line: rgba(120, 160, 220, 0.14);
-      --line-strong: rgba(120, 160, 220, 0.28);
-      --text: #eef4ff;
-      --muted: #8ba3c7;
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --line: rgba(120, 160, 220, 0.22);
+      --text: #e8eefc;
+      --muted: #8fa3c7;
       --accent: #5cc8ff;
-      --good: #34d399;
-      --warn: #fbbf24;
-      --radius: 14px;
-      --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+      --ok: #3dd68c;
+      --warn: #f0b35c;
+      --bad: #ff7d9d;
+      --motor: #f97316;
+      --bms: #a78bfa;
+      --sensor: #38bdf8;
     }
-
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
-      min-height: 100vh;
+      background: radial-gradient(1200px 600px at 10% -10%, #1a2744 0%, var(--bg) 55%);
       color: var(--text);
-      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-      background:
-        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(37, 99, 235, 0.18), transparent 55%),
-        radial-gradient(ellipse 60% 40% at 90% 0%, rgba(14, 165, 233, 0.1), transparent 50%),
-        linear-gradient(180deg, var(--bg1) 0%, var(--bg0) 100%);
+      font-family: "Segoe UI", system-ui, sans-serif;
     }
-
-    .page {
-      width: min(1720px, 100%);
-      margin: 0 auto;
-      padding: 20px 24px 32px;
-    }
-
-    /* ── Header ── */
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 12px; }
     .topbar {
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 20px;
-      margin-bottom: 20px;
       flex-wrap: wrap;
-    }
-
-    .brand h1 {
-      margin: 0;
-      font-size: 1.55rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-
-    .brand p {
-      margin: 6px 0 0;
-      color: var(--muted);
-      font-size: 0.82rem;
-    }
-
-    .chips {
-      display: flex;
       gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
     }
-
+    h1 { margin: 0; font-size: 1.15rem; }
+    .sub { color: var(--muted); font-size: 0.82rem; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .chip {
-      display: inline-flex;
+      border: 1px solid var(--line);
+      background: rgba(10, 16, 28, 0.85);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .chip.online { color: var(--ok); border-color: rgba(61, 214, 140, 0.45); }
+    .chip strong { color: var(--text); font-weight: 700; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(22, 32, 52, 0.95), rgba(14, 20, 34, 0.98));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      min-height: 0;
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 0.95rem;
+      display: flex;
       align-items: center;
       gap: 8px;
-      padding: 6px 14px;
-      border-radius: 999px;
-      background: var(--surface2);
-      border: 1px solid var(--line);
-      font-size: 0.78rem;
-      font-weight: 700;
-      color: var(--muted);
     }
-
-    .chip strong {
-      color: var(--text);
-      font-size: 0.9rem;
+    .panel h2 .tag {
+      font-size: 0.68rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .panel.sensor h2 .tag { color: var(--sensor); border-color: rgba(56, 189, 248, 0.4); }
+    .panel.motor h2 .tag { color: var(--motor); border-color: rgba(249, 115, 22, 0.4); }
+    .panel.bms h2 .tag { color: var(--bms); border-color: rgba(167, 139, 250, 0.4); }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: rgba(8, 12, 22, 0.55);
+    }
+    .metric .k {
+      color: var(--muted);
+      font-size: 0.72rem;
+      margin-bottom: 2px;
+    }
+    .metric .v {
+      font-size: 1.15rem;
+      font-weight: 700;
       font-variant-numeric: tabular-nums;
     }
-
-    .chip .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--warn);
-      box-shadow: 0 0 10px var(--warn);
-    }
-
-    .chip.online .dot {
-      background: var(--good);
-      box-shadow: 0 0 10px var(--good);
-      animation: pulse 2s ease infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.45; }
-    }
-
-    .topbar .server-nav a,
-    .topbar .server-nav__logout-btn {
-      min-height: 38px;
-      padding: 0 16px;
-      border-radius: 10px;
-      font-size: 0.82rem;
-      font-weight: 700;
-      border: 1px solid var(--line-strong);
-      background: var(--surface2);
-      color: #dce8ff;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s, transform 0.1s;
-    }
-
-    .topbar .server-nav a:hover {
-      border-color: rgba(92, 200, 255, 0.5);
-      background: rgba(30, 58, 95, 0.6);
-    }
-
-    .topbar .server-nav a.active {
-      border-color: rgba(92, 200, 255, 0.65);
-      background: linear-gradient(180deg, rgba(37, 99, 235, 0.35), rgba(20, 50, 90, 0.5));
-      color: #fff;
-    }
-
-    .topbar .server-nav__logout-btn {
-      border-color: rgba(248, 113, 113, 0.35);
-      background: rgba(80, 20, 30, 0.45);
-      color: #fecdd3;
-    }
-
-    .topbar .server-nav {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    /* ── Layout ── */
-    .layout-top {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
-      gap: 18px;
-      margin-bottom: 20px;
-      align-items: start;
-    }
-
-    .panel {
-      background: var(--surface);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      min-width: 0;
-    }
-
-    .panel-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px 0;
-    }
-
-    .panel-title {
+    .metric .v small {
       font-size: 0.72rem;
-      font-weight: 800;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      margin-left: 3px;
+    }
+    .metric.wide { grid-column: 1 / -1; }
+    .flags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .flag {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 5px 9px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: rgba(8, 12, 22, 0.45);
+    }
+    .flag.on {
+      color: #041018;
+      background: var(--ok);
+      border-color: transparent;
+      font-weight: 700;
+    }
+    .flag.mode {
+      color: var(--text);
+      border-color: rgba(249, 115, 22, 0.45);
+    }
+    .charts {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chart-row {
+      display: grid;
+      grid-template-columns: 72px 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+    .chart-row .label {
+      font-size: 0.72rem;
       color: var(--muted);
     }
-
-    .panel-title::before {
-      content: '';
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 2px;
-      background: var(--accent);
-      margin-right: 8px;
-      vertical-align: middle;
-      box-shadow: 0 0 12px rgba(92, 200, 255, 0.5);
-    }
-
-    /* ── Camera ── */
-    .camera-body {
-      padding: 0 14px 14px;
-    }
-
-    .camera-frame {
-      position: relative;
-      border-radius: 12px;
+    .chart-box {
+      height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
       overflow: hidden;
-      aspect-ratio: 16 / 10;
-      min-height: 300px;
-      background: #000;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.25);
     }
-
-    .camera-frame::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
+    canvas { width: 100% !important; height: 100% !important; display: block; }
+    .grid + .grid { margin-top: 12px; }
+    .panel.viz h2 .tag { color: var(--accent); border-color: rgba(92, 200, 255, 0.4); }
+    .viz-note {
+      margin: 0 0 8px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .viz-box {
+      height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.28);
+    }
+    .viz-box.tall {
+      height: 268px;
+    }
+    .viz-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+    .viz-stats strong {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .pwr-flow {
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 6px;
+      min-height: 200px;
+      padding: 8px 4px;
+    }
+    .pwr-node {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid var(--line);
       border-radius: 12px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      padding: 10px 8px;
+      background: rgba(8, 12, 22, 0.55);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
-
-    #cameraPreview {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
+    .pwr-node.bms { border-color: rgba(167, 139, 250, 0.45); }
+    .pwr-node.inv { border-color: rgba(249, 115, 22, 0.45); }
+    .pwr-node.mot { border-color: rgba(56, 189, 248, 0.45); }
+    .pwr-node h3 {
+      margin: 0;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
     }
-
-    #cameraPreview.waiting { opacity: 0; }
-
-    #cameraOverlay {
-      position: absolute;
-      inset: 0;
+    .pwr-node.bms h3 { color: var(--bms); }
+    .pwr-node.inv h3 { color: var(--motor); }
+    .pwr-node.mot h3 { color: var(--sensor); }
+    .pwr-line {
+      font-size: 0.72rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .pwr-line span {
+      display: block;
+      color: var(--text);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .pwr-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: auto;
+    }
+    .pwr-badge {
+      font-size: 0.65rem;
+      padding: 3px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .pwr-badge.on {
+      background: rgba(61, 214, 140, 0.2);
+      border-color: rgba(61, 214, 140, 0.5);
+      color: var(--ok);
+      font-weight: 700;
+    }
+    .pwr-link {
+      flex: 0 0 28px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 10px;
-      color: #7d95b8;
-      font-size: 0.75rem;
-      font-weight: 800;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      background: radial-gradient(circle at center, rgba(15, 23, 42, 0.5), rgba(0, 0, 0, 0.85));
-    }
-
-    #cameraOverlay::before {
-      content: '';
-      width: 36px;
-      height: 36px;
-      border: 2px solid rgba(92, 200, 255, 0.25);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 1.2s linear infinite;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Metrics ── */
-    .metrics-body {
-      padding: 12px 14px 14px;
-    }
-
-    .metrics-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .metric-card {
-      --accent-color: #5cc8ff;
-      position: relative;
-      padding: 14px 14px 12px;
-      border-radius: 12px;
-      background: linear-gradient(165deg, rgba(18, 28, 48, 0.95) 0%, rgba(8, 12, 22, 0.98) 100%);
-      border: 1px solid var(--line);
-      overflow: hidden;
-      transition: border-color 0.2s;
-    }
-
-    .metric-card:hover {
-      border-color: var(--line-strong);
-    }
-
-    .metric-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
-      opacity: 0.85;
-    }
-
-    .metric-card.wide { grid-column: 1 / -1; }
-
-    .metric-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 8px;
-      margin-bottom: 10px;
-    }
-
-    .metric-label {
-      font-size: 0.72rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+      gap: 4px;
       color: var(--muted);
+      font-size: 0.65rem;
+      text-align: center;
     }
-
-    .metric-value {
-      font-size: 1.45rem;
-      font-weight: 800;
-      font-variant-numeric: tabular-nums;
-      letter-spacing: -0.02em;
-      color: var(--text);
+    .pwr-link .arrow {
+      font-size: 1.1rem;
+      color: var(--accent);
       line-height: 1;
     }
-
-    .metric-value .u {
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--muted);
-      margin-left: 3px;
-    }
-
-    .chart-box {
-      position: relative;
-      height: 88px;
-      border-radius: 10px;
-      overflow: hidden;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid rgba(255, 255, 255, 0.04);
-    }
-
-    .chart-box.sm { height: 72px; }
-
-    .chart-box canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-
-    .accel-row {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
-    }
-
-    .accel-card .metric-value { font-size: 1.1rem; }
-
-    /* ── Wheels ── */
-    .wheel-panel {
-      padding: 16px 18px 18px;
-    }
-
-    .section-title {
-      margin: 0 0 14px;
-      font-size: 0.72rem;
-      font-weight: 800;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .wheel-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    .wheel-card {
-      --accent-color: #14b8a6;
-      padding: 16px;
-      border-radius: 12px;
-      background: linear-gradient(165deg, rgba(18, 28, 48, 0.9), rgba(8, 12, 22, 0.95));
-      border: 1px solid var(--line);
-      min-width: 0;
-    }
-
-    .wheel-badge {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--line-strong);
-      font-size: 0.8rem;
-      font-weight: 900;
-      letter-spacing: 0.06em;
-      color: var(--accent-color);
-      margin-bottom: 10px;
-      box-shadow: 0 0 20px color-mix(in srgb, var(--accent-color) 25%, transparent);
-    }
-
-    .wheel-stats {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .wheel-stat .k {
-      font-size: 0.65rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 4px;
-    }
-
-    .wheel-stat .v {
-      font-size: 1.15rem;
-      font-weight: 800;
+    .pwr-link strong {
+      color: var(--text);
+      font-size: 0.68rem;
       font-variant-numeric: tabular-nums;
     }
-
-    .wheel-stat .v small {
-      font-size: 0.7rem;
-      font-weight: 600;
-      color: var(--muted);
-    }
-
-    .chart-label {
-      margin: 10px 0 5px;
-      font-size: 0.62rem;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #5d7599;
-    }
-
-    .chart-label:first-of-type { margin-top: 0; }
-
-    @media (max-width: 1200px) {
-      .layout-top { grid-template-columns: 1fr; }
-      .wheel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-
-    @media (max-width: 768px) {
-      .page { padding: 14px; }
-      .metrics-grid,
-      .wheel-grid,
-      .accel-row { grid-template-columns: 1fr; }
-      .topbar { flex-direction: column; align-items: stretch; }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .pwr-flow { flex-direction: column; min-height: 0; }
+      .pwr-link { flex-direction: row; flex: none; padding: 4px 0; }
+      .pwr-link .arrow { transform: rotate(90deg); }
     }
   </style>
-  {% include "partials/mobile_compact.html" %}
 </head>
 <body>
-  <div class="page">
+  <div class="wrap">
     <div class="topbar">
-      <div class="brand">
-        <h1>실시간 모니터링</h1>
-        <p>센서 · 카메라 · 30초 트렌드</p>
-        <div class="chips">
-          <span class="chip" id="statusChip"><span class="dot"></span>상태 <strong id="status">polling</strong></span>
-          <span class="chip"><span>5초 평균</span> <strong><span id="hz5">0.0</span> Hz</strong></span>
-        </div>
+      <div>
+        <h1>실시간 모니터</h1>
+        <div class="sub">센서 · 모터 · BMS</div>
       </div>
-      {% include "partials/server_nav.html" %}
+      <div class="chips">
+        {% include "partials/server_nav.html" %}
+        <span class="chip" id="statusChip">status <strong id="status">polling</strong></span>
+        <span class="chip">Hz <strong id="hz5">0.0</strong></span>
+        <span class="chip">device <strong id="device">-</strong></span>
+      </div>
     </div>
 
-    <section class="layout-top">
-      <div class="panel">
-        <div class="panel-head"><span class="panel-title">Live Camera</span></div>
-        <div class="camera-body">
-          <div class="camera-frame">
-            <img id="cameraPreview" alt="" class="waiting" decoding="async">
-            <div id="cameraOverlay">Stream Waiting</div>
-          </div>
+    <div class="grid">
+      <section class="panel sensor">
+        <h2>센서 <span class="tag">SENSOR</span></h2>
+        <div class="metrics">
+          <div class="metric"><div class="k">x_g · 가속도 X</div><div class="v"><span id="x_g">0.000</span><small>G</small></div></div>
+          <div class="metric"><div class="k">y_g · 가속도 Y</div><div class="v"><span id="y_g">0.000</span><small>G</small></div></div>
+          <div class="metric"><div class="k">z_g · 가속도 Z</div><div class="v"><span id="z_g">0.000</span><small>G</small></div></div>
+          <div class="metric"><div class="k">ecu_temp · MCU온도</div><div class="v"><span id="ecu_temp">0.0</span><small>°C</small></div></div>
+          <div class="metric"><div class="k">steering_angle · 조향각</div><div class="v"><span id="steering_angle">0.0</span><small>°</small></div></div>
+          <div class="metric"><div class="k">steering_speed · 각속도</div><div class="v"><span id="steering_speed">0.0</span><small>°/s</small></div></div>
+          <div class="metric"><div class="k">FL · 앞왼쪽</div><div class="v"><span id="FL">0.0</span><small>mm</small></div></div>
+          <div class="metric"><div class="k">FR · 앞오른쪽</div><div class="v"><span id="FR">0.0</span><small>mm</small></div></div>
+          <div class="metric"><div class="k">RL · 뒤왼쪽</div><div class="v"><span id="RL">0.0</span><small>mm</small></div></div>
+          <div class="metric"><div class="k">RR · 뒤오른쪽</div><div class="v"><span id="RR">0.0</span><small>mm</small></div></div>
+          <div class="metric wide"><div class="k">stm_ms · STM 부팅 후</div><div class="v"><span id="stm_ms">0</span><small>ms</small></div></div>
         </div>
-      </div>
+        <div class="charts">
+          <div class="chart-row"><div class="label">x_g</div><div class="chart-box"><canvas id="c-x_g"></canvas></div></div>
+          <div class="chart-row"><div class="label">y_g</div><div class="chart-box"><canvas id="c-y_g"></canvas></div></div>
+          <div class="chart-row"><div class="label">z_g</div><div class="chart-box"><canvas id="c-z_g"></canvas></div></div>
+        </div>
+      </section>
 
-      <div class="panel">
-        <div class="panel-head"><span class="panel-title">Vehicle Telemetry</span></div>
-        <div class="metrics-body">
-          <div class="metrics-grid">
-            <div class="metric-card" style="--accent-color:#5cc8ff">
-              <div class="metric-top">
-                <span class="metric-label">차속</span>
-                <span class="metric-value"><span id="speed">0</span><span class="u">km/h</span></span>
-              </div>
-              <div class="chart-box"><canvas id="canvas-speed"></canvas></div>
-            </div>
-            <div class="metric-card" style="--accent-color:#f0b35c">
-              <div class="metric-top">
-                <span class="metric-label">엑셀</span>
-                <span class="metric-value" id="accelValue">0</span>
-              </div>
-              <div class="chart-box"><canvas id="canvas-accel_value"></canvas></div>
-            </div>
-            <div class="metric-card" style="--accent-color:#ff7d9d">
-              <div class="metric-top">
-                <span class="metric-label">브레이크</span>
-                <span class="metric-value" id="brakeValue">0</span>
-              </div>
-              <div class="chart-box"><canvas id="canvas-brake_value"></canvas></div>
-            </div>
-            <div class="metric-card" style="--accent-color:#c084fc">
-              <div class="metric-top">
-                <span class="metric-label">스티어링 각도</span>
-                <span class="metric-value"><span id="steeringAngle">0</span><span class="u">°</span></span>
-              </div>
-              <div class="chart-box"><canvas id="canvas-steering_angle"></canvas></div>
-            </div>
-            <div class="metric-card" style="--accent-color:#a78bfa">
-              <div class="metric-top">
-                <span class="metric-label">스티어링 속도</span>
-                <span class="metric-value"><span id="steeringSpeed">0</span><span class="u">°/s</span></span>
-              </div>
-              <div class="chart-box"><canvas id="canvas-steering_speed"></canvas></div>
-            </div>
-            <div class="metric-card" style="--accent-color:#ef4444">
-              <div class="metric-top">
-                <span class="metric-label">ECU 온도</span>
-                <span class="metric-value"><span id="coreTemp">0.0</span><span class="u">°C</span></span>
-              </div>
-              <div class="chart-box"><canvas id="canvas-core_temp"></canvas></div>
-            </div>
-            <div class="metric-card wide" style="--accent-color:#a855f7">
-              <div class="metric-top">
-                <span class="metric-label">가속도 (G)</span>
-              </div>
-              <div class="accel-row">
-                <div class="accel-card">
-                  <div class="metric-top">
-                    <span class="metric-label">X</span>
-                    <span class="metric-value" id="accelX">0.0</span>
-                  </div>
-                  <div class="chart-box sm"><canvas id="canvas-accel_x"></canvas></div>
-                </div>
-                <div class="accel-card">
-                  <div class="metric-top">
-                    <span class="metric-label">Y</span>
-                    <span class="metric-value" id="accelY">0.0</span>
-                  </div>
-                  <div class="chart-box sm"><canvas id="canvas-accel_y"></canvas></div>
-                </div>
-                <div class="accel-card">
-                  <div class="metric-top">
-                    <span class="metric-label">Z</span>
-                    <span class="metric-value" id="accelZ">0.0</span>
-                  </div>
-                  <div class="chart-box sm"><canvas id="canvas-accel_z"></canvas></div>
-                </div>
-              </div>
-            </div>
-          </div>
+      <section class="panel motor">
+        <h2>모터 / 인버터 <span class="tag">MOTOR</span></h2>
+        <div class="metrics">
+          <div class="metric"><div class="k">inv_temp_igt · IGBT max</div><div class="v"><span id="inv_temp_igt">0.0</span><small>°C</small></div></div>
+          <div class="metric"><div class="k">inv_temp_motor · 모터</div><div class="v"><span id="inv_temp_motor">0.0</span><small>°C</small></div></div>
+          <div class="metric"><div class="k">inv_motor_speed</div><div class="v"><span id="inv_motor_speed">0</span><small>rpm</small></div></div>
+          <div class="metric"><div class="k">vehicle_speed · 차속</div><div class="v"><span id="vehicle_speed_kmh">0.0</span><small>km/h</small></div></div>
+          <div class="metric"><div class="k">inv_dc_current · DC</div><div class="v"><span id="inv_dc_current">0.0</span><small>A</small></div></div>
+          <div class="metric"><div class="k">inv_voltage · DC bus</div><div class="v"><span id="inv_voltage">0.0</span><small>V</small></div></div>
+          <div class="metric"><div class="k">INV_torque_commanded</div><div class="v"><span id="INV_torque_commanded">0.0</span><small>Nm</small></div></div>
+          <div class="metric"><div class="k">INV_torque_feedback</div><div class="v"><span id="INV_torque_feedback">0.0</span><small>Nm</small></div></div>
+          <div class="metric"><div class="k">INV_shudder_torque</div><div class="v"><span id="INV_shudder_torque">0.0</span><small>Nm</small></div></div>
+          <div class="metric"><div class="k">INV_id_command</div><div class="v"><span id="INV_id_command">0.0</span><small>A</small></div></div>
+          <div class="metric"><div class="k">INV_iq_command</div><div class="v"><span id="INV_iq_command">0.0</span><small>A</small></div></div>
+          <div class="metric"><div class="k">INV_id_feedback</div><div class="v"><span id="INV_id_feedback">0.0</span><small>A</small></div></div>
+          <div class="metric"><div class="k">INV_iq_feedback</div><div class="v"><span id="INV_iq_feedback">0.0</span><small>A</small></div></div>
         </div>
-      </div>
-    </section>
+        <div class="flags">
+          <span class="flag" id="flag_precharge">precharge OFF</span>
+          <span class="flag" id="flag_contactor">main_contactor OFF</span>
+          <span class="flag mode" id="flag_mode">Run Mode: Torque (0)</span>
+          <span class="flag" id="flag_can1">CAN1 OFF</span>
+          <span class="flag" id="flag_can2">CAN2 OFF</span>
+        </div>
+        <div class="charts">
+          <div class="chart-row"><div class="label">rpm</div><div class="chart-box"><canvas id="c-inv_motor_speed"></canvas></div></div>
+          <div class="chart-row"><div class="label">km/h</div><div class="chart-box"><canvas id="c-vehicle_speed_kmh"></canvas></div></div>
+          <div class="chart-row"><div class="label">dc A</div><div class="chart-box"><canvas id="c-inv_dc_current"></canvas></div></div>
+          <div class="chart-row"><div class="label">V</div><div class="chart-box"><canvas id="c-inv_voltage"></canvas></div></div>
+          <div class="chart-row"><div class="label">T cmd</div><div class="chart-box"><canvas id="c-INV_torque_commanded"></canvas></div></div>
+          <div class="chart-row"><div class="label">T fb</div><div class="chart-box"><canvas id="c-INV_torque_feedback"></canvas></div></div>
+          <div class="chart-row"><div class="label">Iq fb</div><div class="chart-box"><canvas id="c-INV_iq_feedback"></canvas></div></div>
+        </div>
+      </section>
 
-    <section class="panel wheel-panel">
-      <h2 class="section-title">Wheel / Linear</h2>
-      <div class="wheel-grid">
-        <div class="wheel-card" style="--accent-color:#14b8a6">
-          <div class="wheel-badge">FL</div>
-          <div class="wheel-stats">
-            <div class="wheel-stat"><div class="k">Linear</div><div class="v"><span id="linearFl">0.0</span><small> mm</small></div></div>
-            <div class="wheel-stat"><div class="k">RPM</div><div class="v"><span id="rpmLeftA">0</span></div></div>
-          </div>
-          <div class="chart-label">Linear</div>
-          <div class="chart-box sm"><canvas id="canvas-linear_fl"></canvas></div>
-          <div class="chart-label">RPM</div>
-          <div class="chart-box sm"><canvas id="canvas-rpm_fl"></canvas></div>
+      <section class="panel bms">
+        <h2>BMS <span class="tag">BATTERY</span></h2>
+        <div class="metrics">
+          <div class="metric"><div class="k">bms_charge · SOC</div><div class="v"><span id="bms_charge">0.0</span><small>%</small></div></div>
+          <div class="metric"><div class="k">bms_capacity · 잔량</div><div class="v"><span id="bms_capacity">0.0</span><small>Ah</small></div></div>
+          <div class="metric"><div class="k">bms_voltage · Pack</div><div class="v"><span id="bms_voltage">0.0</span><small>V</small></div></div>
+          <div class="metric"><div class="k">bms_current · Pack</div><div class="v"><span id="bms_current">0.0</span><small>A</small></div></div>
+          <div class="metric"><div class="k">bms_ccl · 충전한도</div><div class="v"><span id="bms_ccl">0.0</span><small>A</small></div></div>
+          <div class="metric"><div class="k">bms_dcl · 방전한도</div><div class="v"><span id="bms_dcl">0.0</span><small>A</small></div></div>
+          <div class="metric wide"><div class="k">bms_temp_maxvalue · High Temp</div><div class="v"><span id="bms_temp_maxvalue">0.0</span><small>°C</small></div></div>
         </div>
-        <div class="wheel-card" style="--accent-color:#38bdf8">
-          <div class="wheel-badge">FR</div>
-          <div class="wheel-stats">
-            <div class="wheel-stat"><div class="k">Linear</div><div class="v"><span id="linearFr">0.0</span><small> mm</small></div></div>
-            <div class="wheel-stat"><div class="k">RPM</div><div class="v"><span id="rpmRightA">0</span></div></div>
-          </div>
-          <div class="chart-label">Linear</div>
-          <div class="chart-box sm"><canvas id="canvas-linear_fr"></canvas></div>
-          <div class="chart-label">RPM</div>
-          <div class="chart-box sm"><canvas id="canvas-rpm_fr"></canvas></div>
+        <div class="charts">
+          <div class="chart-row"><div class="label">V</div><div class="chart-box"><canvas id="c-bms_voltage"></canvas></div></div>
+          <div class="chart-row"><div class="label">A</div><div class="chart-box"><canvas id="c-bms_current"></canvas></div></div>
+          <div class="chart-row"><div class="label">SOC</div><div class="chart-box"><canvas id="c-bms_charge"></canvas></div></div>
         </div>
-        <div class="wheel-card" style="--accent-color:#8b5cf6">
-          <div class="wheel-badge">RL</div>
-          <div class="wheel-stats">
-            <div class="wheel-stat"><div class="k">Linear</div><div class="v"><span id="linearRl">0.0</span><small> mm</small></div></div>
-            <div class="wheel-stat"><div class="k">RPM</div><div class="v"><span id="rpmLeftB">0</span></div></div>
-          </div>
-          <div class="chart-label">Linear</div>
-          <div class="chart-box sm"><canvas id="canvas-linear_rl"></canvas></div>
-          <div class="chart-label">RPM</div>
-          <div class="chart-box sm"><canvas id="canvas-rpm_rl"></canvas></div>
+      </section>
+    </div>
+
+    <div class="grid">
+      <section class="panel viz">
+        <h2>서스 자세 <span class="tag">ROLL / PITCH</span></h2>
+        <p class="viz-note">FL·FR·RL·RR(mm) 차이로 추정 — 작은 변화는 자동으로 키워서 표시합니다.</p>
+        <div class="viz-box tall"><canvas id="viz-chassis"></canvas></div>
+        <div class="viz-stats">
+          <span>롤 Δ <strong id="viz-roll">0.0</strong> mm</span>
+          <span>피치 Δ <strong id="viz-pitch">0.0</strong> mm</span>
+          <span>조향 <strong id="viz-steer">0.0</strong>°</span>
+          <span>10초 가동범위 FL <strong id="viz-range-fl">0.0</strong> mm</span>
+          <span>FR <strong id="viz-range-fr">0.0</strong> mm</span>
+          <span>RL <strong id="viz-range-rl">0.0</strong> mm</span>
+          <span>RR <strong id="viz-range-rr">0.0</strong> mm</span>
         </div>
-        <div class="wheel-card" style="--accent-color:#ec4899">
-          <div class="wheel-badge">RR</div>
-          <div class="wheel-stats">
-            <div class="wheel-stat"><div class="k">Linear</div><div class="v"><span id="linearRr">0.0</span><small> mm</small></div></div>
-            <div class="wheel-stat"><div class="k">RPM</div><div class="v"><span id="rpmRightB">0</span></div></div>
-          </div>
-          <div class="chart-label">Linear</div>
-          <div class="chart-box sm"><canvas id="canvas-linear_rr"></canvas></div>
-          <div class="chart-label">RPM</div>
-          <div class="chart-box sm"><canvas id="canvas-rpm_rr"></canvas></div>
+      </section>
+
+      <section class="panel viz">
+        <h2>G-G 궤적 <span class="tag">최근 10초</span></h2>
+        <p class="viz-note">X/Y 가속도의 최근 10초 이동 궤적 + 현재 벡터. 밝을수록 최신 값입니다.</p>
+        <div class="viz-box"><canvas id="viz-g"></canvas></div>
+        <div class="viz-stats">
+          <span>|XY| <strong id="viz-g-xy">0.000</strong> G</span>
+          <span>10초 피크 <strong id="viz-g-peak">0.000</strong> G</span>
+          <span>표시축 ±<strong id="viz-g-scale">0.25</strong> G</span>
+          <span>|XYZ| <strong id="viz-g-total">0.000</strong> G</span>
+          <span>z <strong id="viz-g-z">0.000</strong> G</span>
         </div>
-      </div>
-    </section>
+      </section>
+
+      <section class="panel viz">
+        <h2>전력 경로 <span class="tag">BMS → INV → MOTOR</span></h2>
+        <p class="viz-note">지금 수신 필드만 사용한 블록 다이어그램.</p>
+        <div class="pwr-flow">
+          <div class="pwr-node bms">
+            <h3>BMS</h3>
+            <div class="pwr-line">Pack V<span id="pwr-bms-v">0.0 V</span></div>
+            <div class="pwr-line">Pack I<span id="pwr-bms-i">0.0 A</span></div>
+            <div class="pwr-line">SOC<span id="pwr-bms-soc">0.0 %</span></div>
+            <div class="pwr-line">P_pack<span id="pwr-bms-p">0 kW</span></div>
+            <div class="pwr-line">T_max<span id="pwr-bms-t">0.0 °C</span></div>
+          </div>
+          <div class="pwr-link">
+            <span class="arrow">→</span>
+            <strong id="pwr-link-bms">0 A</strong>
+            <span>CCL/DCL</span>
+          </div>
+          <div class="pwr-node inv">
+            <h3>INVERTER</h3>
+            <div class="pwr-line">DC bus<span id="pwr-inv-v">0.0 V</span></div>
+            <div class="pwr-line">DC I<span id="pwr-inv-i">0.0 A</span></div>
+            <div class="pwr-line">P_dc<span id="pwr-inv-p">0 kW</span></div>
+            <div class="pwr-line">IGBT<span id="pwr-inv-t1">0 °C</span></div>
+            <div class="pwr-badges">
+              <span class="pwr-badge" id="pwr-pre">pre OFF</span>
+              <span class="pwr-badge" id="pwr-con">MC OFF</span>
+            </div>
+          </div>
+          <div class="pwr-link">
+            <span class="arrow">→</span>
+            <strong id="pwr-link-rpm">0 rpm</strong>
+            <span id="pwr-link-mode">Torque</span>
+          </div>
+          <div class="pwr-node mot">
+            <h3>MOTOR</h3>
+            <div class="pwr-line">Speed<span id="pwr-mot-rpm">0 rpm</span></div>
+            <div class="pwr-line">모터 T<span id="pwr-mot-t">0 °C</span></div>
+            <div class="pwr-line">한도<span id="pwr-mot-lim">DCL —</span></div>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>
 
   <script>
-    const WINDOW_MS = 30000;
-    const CAMERA_PREVIEW_URL = '{{ nav.camera }}'.replace(/\/$/, '') + '/api/camera/latest.jpg';
-    const histories = new Map();
-    let cameraPreviewBusy = false;
-    let lastCameraPreviewAt = 0;
-
-    const SERIES = [
-      { id: 'speed', key: 'speed', color: '#5cc8ff' },
-      { id: 'accel_value', key: 'accel_value', color: '#f0b35c' },
-      { id: 'brake_value', key: 'brake_value', color: '#ff7d9d' },
-      { id: 'steering_angle', key: 'steering_angle', color: '#c084fc' },
-      { id: 'steering_speed', key: 'steering_speed', color: '#a78bfa' },
-      { id: 'core_temp', key: 'core_temp', color: '#ef4444' },
-      { id: 'accel_x', key: 'accel_x', color: '#a855f7' },
-      { id: 'accel_y', key: 'accel_y', color: '#3b82f6' },
-      { id: 'accel_z', key: 'accel_z', color: '#22c55e' },
-      { id: 'linear_fl', key: 'linear_fl', color: '#14b8a6' },
-      { id: 'linear_fr', key: 'linear_fr', color: '#38bdf8' },
-      { id: 'linear_rl', key: 'linear_rl', color: '#8b5cf6' },
-      { id: 'linear_rr', key: 'linear_rr', color: '#ec4899' },
-      { id: 'rpm_fl', key: 'rpm_left', color: '#f59e0b' },
-      { id: 'rpm_fr', key: 'rpm_right', color: '#fb7185' },
-      { id: 'rpm_rl', key: 'rpm_left', color: '#f59e0b' },
-      { id: 'rpm_rr', key: 'rpm_right', color: '#fb7185' },
-    ];
-
-    SERIES.forEach((s) => histories.set(s.id, []));
-
-    function text(id, value, digits = 0) {
-      const node = document.getElementById(id);
-      if (!node) return;
-      const n = Number(value || 0);
-      node.textContent = Number.isFinite(n) ? n.toFixed(digits) : String(value || 0);
+    const APP_BASE = (() => {
+      const m = location.pathname.match(/^(\/live)(?=\/|$)/);
+      return m ? m[1] : '';
+    })();
+    function apiUrl(path) {
+      const p = path.startsWith('/') ? path : ('/' + path);
+      return APP_BASE + p;
     }
 
-    function setOnline(online) {
-      document.getElementById('statusChip').classList.toggle('online', online);
-      document.getElementById('status').textContent = online ? 'online' : 'polling';
+    const HISTORY_MS = 6_000;
+    const HISTORY_MAX_POINTS = 36;
+    const CHART_DRAW_EVERY_MS = 500;
+    let lastChartDrawAt = 0;
+    const SERIES = [
+      { id: 'x_g', color: '#a855f7' },
+      { id: 'y_g', color: '#3b82f6' },
+      { id: 'z_g', color: '#22c55e' },
+      { id: 'inv_motor_speed', color: '#f97316' },
+      { id: 'vehicle_speed_kmh', color: '#34d399' },
+      { id: 'inv_dc_current', color: '#fb7185' },
+      { id: 'inv_voltage', color: '#fbbf24' },
+      { id: 'INV_torque_commanded', color: '#e11d48' },
+      { id: 'INV_torque_feedback', color: '#db2777' },
+      { id: 'INV_iq_feedback', color: '#7c3aed' },
+      { id: 'bms_voltage', color: '#a78bfa' },
+      { id: 'bms_current', color: '#c084fc' },
+      { id: 'bms_charge', color: '#67e8f9' },
+    ];
+    const histories = new Map(SERIES.map((s) => [s.id, []]));
+    const canvases = new Map();
+    SERIES.forEach((s) => {
+      const el = document.getElementById('c-' + s.id);
+      if (el) canvases.set(s.id, el.getContext('2d'));
+    });
+
+    function text(id, value, digits) {
+      const node = document.getElementById(id);
+      if (!node) return;
+      const n = Number(value);
+      node.textContent = Number.isFinite(n) ? n.toFixed(digits) : String(value ?? '-');
+    }
+
+    function setFlag(id, on, label) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle('on', !!on);
+      if (label != null) el.textContent = label;
     }
 
     function pushHistory(id, value) {
-      const now = Date.now();
+      const arr = histories.get(id);
+      if (!arr) return;
       const n = Number(value);
-      if (!Number.isFinite(n)) return;
-      const list = histories.get(id) || [];
-      list.push({ t: now, v: n });
-      const cutoff = now - WINDOW_MS;
-      while (list.length && list[0].t < cutoff) list.shift();
-      histories.set(id, list);
-    }
-
-    function rgba(hex, a) {
-      const raw = hex.replace('#', '');
-      const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
-      const num = parseInt(full, 16);
-      return 'rgba(' + ((num >> 16) & 255) + ',' + ((num >> 8) & 255) + ',' + (num & 255) + ',' + a + ')';
-    }
-
-    function drawChart(canvas, series) {
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const rect = canvas.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(rect.width));
-      const h = Math.max(1, Math.floor(rect.height));
-      const bw = Math.max(1, Math.floor(w * dpr));
-      const bh = Math.max(1, Math.floor(h * dpr));
-      if (canvas.width !== bw || canvas.height !== bh) {
-        canvas.width = bw;
-        canvas.height = bh;
+      const now = Date.now();
+      arr.push({ t: now, v: Number.isFinite(n) ? n : 0 });
+      const cutoff = now - HISTORY_MS;
+      while (arr.length && arr[0].t < cutoff) arr.shift();
+      // 포인트 상한 — 그리기/min-max 부담 감소
+      if (arr.length > HISTORY_MAX_POINTS) {
+        arr.splice(0, arr.length - HISTORY_MAX_POINTS);
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
 
-      const list = histories.get(series.id) || [];
+    function drawChart(id, color) {
+      const ctx = canvases.get(id);
+      const data = histories.get(id) || [];
+      if (!ctx) return;
+      const canvas = ctx.canvas;
+      const w = canvas.clientWidth || 200;
+      const h = canvas.clientHeight || 48;
+      // 리사이즈는 필요할 때만 (매 프레임 캔버스 리셋 방지)
+      if (Math.abs(canvas.width - w) > 1) canvas.width = w;
+      if (Math.abs(canvas.height - h) > 1) canvas.height = h;
+      ctx.clearRect(0, 0, w, h);
+      if (data.length < 2) return;
+
+      let min = data[0].v;
+      let max = data[0].v;
+      for (let i = 1; i < data.length; i++) {
+        const v = data[i].v;
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      if (min === max) { min -= 1; max += 1; }
+      const pad = (max - min) * 0.08;
+      min -= pad; max += pad;
+      const now = Date.now();
+      const start = now - HISTORY_MS;
+      const span = max - min || 1;
+
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      const n = data.length;
+      const step = n > 48 ? Math.ceil(n / 48) : 1;
+      let started = false;
+      for (let i = 0; i < n; i += step) {
+        const point = data[i];
+        const ratio = Math.max(0, Math.min(1, (point.t - start) / HISTORY_MS));
+        const x = (ratio * (w - 2) + 1) | 0;
+        const y = (h - ((point.v - min) / span) * (h - 4) - 2) | 0;
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      // 마지막 점 보장
+      const last = data[n - 1];
+      const lr = Math.max(0, Math.min(1, (last.t - start) / HISTORY_MS));
+      ctx.lineTo(((lr * (w - 2) + 1) | 0), ((h - ((last.v - min) / span) * (h - 4) - 2) | 0));
+      ctx.stroke();
+    }
+
+    function drawChartsIfDue(force) {
+      const now = Date.now();
+      if (!force && (now - lastChartDrawAt) < CHART_DRAW_EVERY_MS) return;
+      lastChartDrawAt = now;
+      SERIES.forEach((s) => {
+        if (canvases.has(s.id)) drawChart(s.id, s.color);
+      });
+    }
+
+    const vizChassis = document.getElementById('viz-chassis');
+    const vizG = document.getElementById('viz-g');
+    const chassisCtx = vizChassis ? vizChassis.getContext('2d') : null;
+    const gCtx = vizG ? vizG.getContext('2d') : null;
+    const chassisSmooth = { fl: 0, fr: 0, rl: 0, rr: 0, init: false };
+    const chassisSpreadHist = [];
+    const suspensionHistory = [];
+    const gTrail = [];
+    let gDisplayRange = 0.25;
+
+    function fitCanvas(canvas, ctx) {
+      if (!canvas || !ctx) return { w: 0, h: 0 };
+      const w = canvas.clientWidth || 300;
+      const h = canvas.clientHeight || 220;
+      if (canvas.width !== w) canvas.width = w;
+      if (canvas.height !== h) canvas.height = h;
+      return { w, h };
+    }
+
+    function isoProject(x, y, z, scale) {
+      const sx = (x - y) * 0.866 * scale;
+      const sy = (x + y) * 0.5 * scale - z * scale;
+      return { x: sx, y: sy };
+    }
+
+    function drawChassis(FL, FR, RL, RR, steerDeg) {
+      if (!chassisCtx || !vizChassis) return;
+      const { w, h } = fitCanvas(vizChassis, chassisCtx);
+      const ctx = chassisCtx;
       ctx.clearRect(0, 0, w, h);
 
-      const px = 10, py = 10, pw = w - px * 2, ph = h - py * 2;
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 3; i++) {
-        const y = py + (ph / 3) * i;
-        ctx.beginPath();
-        ctx.moveTo(px, y);
-        ctx.lineTo(w - px, y);
-        ctx.stroke();
-      }
-
-      if (list.length < 2) {
-        ctx.strokeStyle = rgba(series.color, 0.2);
-        ctx.setLineDash([4, 6]);
-        ctx.beginPath();
-        ctx.moveTo(px, py + ph / 2);
-        ctx.lineTo(w - px, py + ph / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        return;
-      }
-
+      let fl = Number(FL) || 0;
+      let fr = Number(FR) || 0;
+      let rl = Number(RL) || 0;
+      let rr = Number(RR) || 0;
       const now = Date.now();
-      const start = now - WINDOW_MS;
-      let min = Infinity, max = -Infinity;
-      for (const p of list) { min = Math.min(min, p.v); max = Math.max(max, p.v); }
-      if (min === max) { min -= 1; max += 1; }
-      const pad = (max - min) * 0.15;
-      min -= pad; max += pad;
+      suspensionHistory.push({ t: now, fl, fr, rl, rr });
+      while (suspensionHistory.length && suspensionHistory[0].t < now - HISTORY_MS) {
+        suspensionHistory.shift();
+      }
 
-      const pts = list.map((p) => ({
-        x: px + ((p.t - start) / WINDOW_MS) * pw,
-        y: py + ph - ((p.v - min) / (max - min)) * ph,
+      ['fl', 'fr', 'rl', 'rr'].forEach((corner) => {
+        const values = suspensionHistory.map((point) => point[corner]);
+        const range = values.length ? Math.max(...values) - Math.min(...values) : 0;
+        document.getElementById('viz-range-' + corner).textContent = range.toFixed(1);
+      });
+
+      if (!chassisSmooth.init) {
+        chassisSmooth.fl = fl;
+        chassisSmooth.fr = fr;
+        chassisSmooth.rl = rl;
+        chassisSmooth.rr = rr;
+        chassisSmooth.init = true;
+      } else {
+        const a = 0.42;
+        chassisSmooth.fl += (fl - chassisSmooth.fl) * a;
+        chassisSmooth.fr += (fr - chassisSmooth.fr) * a;
+        chassisSmooth.rl += (rl - chassisSmooth.rl) * a;
+        chassisSmooth.rr += (rr - chassisSmooth.rr) * a;
+        fl = chassisSmooth.fl;
+        fr = chassisSmooth.fr;
+        rl = chassisSmooth.rl;
+        rr = chassisSmooth.rr;
+      }
+
+      const rollMm = (fl + rl) - (fr + rr);
+      const pitchMm = (fl + fr) - (rl + rr);
+      const avg = (fl + fr + rl + rr) / 4;
+      const raw = [
+        { id: 'FL', mm: fl },
+        { id: 'FR', mm: fr },
+        { id: 'RL', mm: rl },
+        { id: 'RR', mm: rr },
+      ];
+      const deltas = raw.map((c) => c.mm - avg);
+      let spread = Math.max(...deltas.map((d) => Math.abs(d)), 0.001);
+      chassisSpreadHist.push(spread);
+      if (chassisSpreadHist.length > 40) chassisSpreadHist.shift();
+      const histSpread = Math.max(...chassisSpreadHist, 0.5);
+      spread = Math.max(spread, histSpread * 0.35, 0.5);
+      const zGain = 22 / spread;
+
+      document.getElementById('viz-roll').textContent = rollMm.toFixed(1);
+      document.getElementById('viz-pitch').textContent = pitchMm.toFixed(1);
+      document.getElementById('viz-steer').textContent = (Number(steerDeg) || 0).toFixed(1);
+
+      const barW = Math.min(88, w * 0.22);
+      const isoW = w - barW - 8;
+      const cx = isoW * 0.48;
+      const cy = h * 0.54;
+      const scale = Math.min(isoW, h) * 0.0045;
+      const W = 42;
+      const L = 58;
+
+      const corners = [
+        { id: 'FL', x: -W, y: L, mm: fl, dz: deltas[0] },
+        { id: 'FR', x: W, y: L, mm: fr, dz: deltas[1] },
+        { id: 'RR', x: W, y: -L, mm: rr, dz: deltas[3] },
+        { id: 'RL', x: -W, y: -L, mm: rl, dz: deltas[2] },
+      ].map((c) => ({
+        ...c,
+        z: -c.dz * zGain,
       }));
 
-      const grad = ctx.createLinearGradient(0, py, 0, py + ph);
-      grad.addColorStop(0, rgba(series.color, 0.35));
-      grad.addColorStop(1, rgba(series.color, 0));
+      ctx.strokeStyle = 'rgba(120, 160, 220, 0.12)';
+      ctx.lineWidth = 1;
+      for (let i = -3; i <= 3; i++) {
+        const a = isoProject(-80, i * 22, 0, scale);
+        const b = isoProject(80, i * 22, 0, scale);
+        ctx.beginPath();
+        ctx.moveTo(cx + a.x, cy + a.y);
+        ctx.lineTo(cx + b.x, cy + b.y);
+        ctx.stroke();
+        const c0 = isoProject(i * 22, -80, 0, scale);
+        const d = isoProject(i * 22, 80, 0, scale);
+        ctx.beginPath();
+        ctx.moveTo(cx + c0.x, cy + c0.y);
+        ctx.lineTo(cx + d.x, cy + d.y);
+        ctx.stroke();
+      }
+
+      const ground = corners.map((c) => {
+        const p = isoProject(c.x, c.y, 0, scale);
+        return { sx: cx + p.x, sy: cy + p.y };
+      });
+      const neutral = corners.map((c) => {
+        const p = isoProject(c.x, c.y, 0, scale);
+        return { sx: cx + p.x, sy: cy + p.y };
+      });
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = 'rgba(139, 163, 199, 0.45)';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(pts[0].x, py + ph);
-      pts.forEach((p) => ctx.lineTo(p.x, p.y));
-      ctx.lineTo(pts[pts.length - 1].x, py + ph);
+      neutral.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.sx, p.sy);
+        else ctx.lineTo(p.sx, p.sy);
+      });
       ctx.closePath();
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      ctx.shadowColor = rgba(series.color, 0.6);
-      ctx.shadowBlur = 8;
-      ctx.strokeStyle = series.color;
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.setLineDash([]);
 
-      const last = pts[pts.length - 1];
-      ctx.fillStyle = series.color;
+      const pts = corners.map((c) => {
+        const p = isoProject(c.x, c.y, c.z, scale);
+        return { ...c, sx: cx + p.x, sy: cy + p.y };
+      });
+
+      ctx.lineWidth = 3;
+      pts.forEach((p, i) => {
+        const t = Math.max(-1, Math.min(1, p.dz / spread));
+        const r = Math.round(248 + t * 7);
+        const g = Math.round(113 - t * 80);
+        const b = Math.round(113 + t * 40);
+        ctx.strokeStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.85)';
+        ctx.beginPath();
+        ctx.moveTo(p.sx, p.sy);
+        ctx.lineTo(ground[i].sx, ground[i].sy);
+        ctx.stroke();
+      });
+
+      const bodyFill = 'rgba(92, 200, 255, 0.16)';
+      const bodyStroke = 'rgba(92, 200, 255, 0.75)';
+      ctx.fillStyle = bodyFill;
+      ctx.strokeStyle = bodyStroke;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+      pts.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.sx, p.sy);
+        else ctx.lineTo(p.sx, p.sy);
+      });
+      ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = '#fff';
+      ctx.stroke();
+
+      const steerRad = ((Number(steerDeg) || 0) * Math.PI) / 180;
+      pts.forEach((p) => {
+        const isFront = p.id === 'FL' || p.id === 'FR';
+        ctx.fillStyle = isFront ? '#f97316' : '#5cc8ff';
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, isFront ? 6 : 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#dce8ff';
+        ctx.font = '700 10px system-ui';
+        ctx.textAlign = p.x < 0 ? 'right' : 'left';
+        ctx.fillText(p.id, p.sx + (p.x < 0 ? -10 : 10), p.sy - 10);
+        ctx.fillStyle = '#8fa3c7';
+        ctx.font = '600 9px system-ui';
+        ctx.fillText(p.mm.toFixed(1), p.sx + (p.x < 0 ? -10 : 10), p.sy + 14);
+        if (isFront && Math.abs(steerRad) > 0.01) {
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(p.sx, p.sy);
+          ctx.lineTo(
+            p.sx + Math.sin(steerRad) * (p.id === 'FL' ? -16 : 16),
+            p.sy - Math.cos(steerRad) * 16
+          );
+          ctx.stroke();
+        }
+      });
+
+      const bx0 = isoW + 10;
+      const bh = h - 36;
+      const by0 = 22;
+      const colW = (barW - 18) / 4;
+      ctx.fillStyle = '#8fa3c7';
+      ctx.font = '600 9px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('코너 Δ (평균 대비 mm)', bx0 + barW / 2 - 9, 12);
+      raw.forEach((c, i) => {
+        const d = c.mm - avg;
+        const x = bx0 + i * (colW + 4);
+        const barH = (Math.abs(d) / spread) * (bh * 0.45);
+        const midY = by0 + bh * 0.5;
+        ctx.strokeStyle = 'rgba(120, 160, 220, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, by0);
+        ctx.lineTo(x, by0 + bh);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x - 2, midY);
+        ctx.lineTo(x + colW, midY);
+        ctx.stroke();
+        ctx.fillStyle = d >= 0 ? 'rgba(52, 211, 153, 0.85)' : 'rgba(248, 113, 113, 0.85)';
+        const top = d >= 0 ? midY - barH : midY;
+        ctx.fillRect(x + 1, top, colW - 2, Math.max(2, barH));
+        ctx.fillStyle = '#dce8ff';
+        ctx.font = '700 9px system-ui';
+        ctx.fillText(c.id, x + colW / 2, by0 + bh + 12);
+        ctx.fillStyle = '#8fa3c7';
+        ctx.font = '600 9px system-ui';
+        ctx.fillText((d >= 0 ? '+' : '') + d.toFixed(1), x + colW / 2, by0 + bh + 24);
+      });
+
+      ctx.fillStyle = '#8fa3c7';
+      ctx.font = '600 10px system-ui';
+      ctx.textAlign = 'left';
+      ctx.fillText('롤 (좌−우): ' + rollMm.toFixed(1) + ' mm', 8, 14);
+      ctx.fillText('피치 (전−후): ' + pitchMm.toFixed(1) + ' mm', 8, 28);
+      ctx.fillText('증폭 ×' + (22 / spread).toFixed(1), 8, h - 8);
+    }
+
+    function drawGVector(xg, yg, zg) {
+      if (!gCtx || !vizG) return;
+      const { w, h } = fitCanvas(vizG, gCtx);
+      const ctx = gCtx;
+      ctx.clearRect(0, 0, w, h);
+
+      const x = Number(xg) || 0;
+      const y = Number(yg) || 0;
+      const z = Number(zg) || 0;
+      const xy = Math.hypot(x, y);
+      const total = Math.hypot(x, y, z);
+      const now = Date.now();
+      gTrail.push({ t: now, x, y, z });
+      while (gTrail.length && gTrail[0].t < now - HISTORY_MS) gTrail.shift();
+      const peakXY = gTrail.reduce((peak, point) => {
+        return Math.max(peak, Math.hypot(point.x, point.y));
+      }, 0);
+
+      document.getElementById('viz-g-xy').textContent = xy.toFixed(3);
+      document.getElementById('viz-g-peak').textContent = peakXY.toFixed(3);
+      document.getElementById('viz-g-total').textContent = total.toFixed(3);
+      document.getElementById('viz-g-z').textContent = z.toFixed(3);
+
+      const cx = w * 0.5;
+      const cy = h * 0.52;
+      const R = Math.min(w, h) * 0.38;
+      const targetRange = Math.max(0.25, Math.min(1.5, peakXY * 1.2));
+      const rangeEase = targetRange > gDisplayRange ? 1.0 : 0.08;
+      gDisplayRange += (targetRange - gDisplayRange) * rangeEase;
+      const gScale = R / gDisplayRange;
+      document.getElementById('viz-g-scale').textContent = gDisplayRange.toFixed(2);
+
+      ctx.strokeStyle = 'rgba(120, 160, 220, 0.25)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(last.x, last.y, 1.5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    function redrawCharts() {
-      SERIES.forEach((s) => {
-        const c = document.getElementById('canvas-' + s.id);
-        if (c) drawChart(c, s);
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.stroke();
+      [0.25, 0.5, 1.0].forEach((referenceG) => {
+        if (referenceG >= gDisplayRange) return;
+        ctx.beginPath();
+        ctx.arc(cx, cy, referenceG * gScale, 0, Math.PI * 2);
+        ctx.strokeStyle = referenceG === 1
+          ? 'rgba(52, 211, 153, 0.35)'
+          : 'rgba(120, 160, 220, 0.14)';
+        ctx.stroke();
       });
-    }
 
-    function updateGraphs(snapshot) {
-      SERIES.forEach((s) => {
-        pushHistory(s.id, snapshot[s.key]);
-        const c = document.getElementById('canvas-' + s.id);
-        if (c) drawChart(c, s);
-      });
-    }
+      ctx.strokeStyle = 'rgba(120, 160, 220, 0.2)';
+      ctx.beginPath();
+      ctx.moveTo(cx - R, cy);
+      ctx.lineTo(cx + R, cy);
+      ctx.moveTo(cx, cy - R);
+      ctx.lineTo(cx, cy + R);
+      ctx.stroke();
 
-    async function pollCameraPreview() {
-      const img = document.getElementById('cameraPreview');
-      const overlay = document.getElementById('cameraOverlay');
-      if (!img || !overlay || cameraPreviewBusy) return;
-      cameraPreviewBusy = true;
-      await new Promise((resolve) => {
-        const done = () => { img.removeEventListener('load', onLoad); img.removeEventListener('error', onErr); resolve(); };
-        const onLoad = () => { img.classList.remove('waiting'); overlay.style.display = 'none'; lastCameraPreviewAt = Date.now(); done(); };
-        const onErr = () => done();
-        img.addEventListener('load', onLoad);
-        img.addEventListener('error', onErr);
-        img.src = CAMERA_PREVIEW_URL + '?_=' + Date.now();
-      });
-      cameraPreviewBusy = false;
-      if (!lastCameraPreviewAt || Date.now() - lastCameraPreviewAt > 3000) {
-        img.classList.add('waiting');
-        overlay.style.display = 'flex';
+      ctx.fillStyle = '#8fa3c7';
+      ctx.font = '600 10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('Y', cx, cy - R - 6);
+      ctx.textAlign = 'left';
+      ctx.fillText('X', cx + R + 6, cy + 4);
+
+      if (gTrail.length > 1) {
+        ctx.lineWidth = 2;
+        for (let i = 1; i < gTrail.length; i++) {
+          const previous = gTrail[i - 1];
+          const current = gTrail[i];
+          const ageRatio = Math.max(0, Math.min(1, (current.t - (now - HISTORY_MS)) / HISTORY_MS));
+          ctx.strokeStyle = 'rgba(92, 200, 255, ' + (0.08 + ageRatio * 0.72).toFixed(3) + ')';
+          ctx.beginPath();
+          ctx.moveTo(cx + previous.x * gScale, cy - previous.y * gScale);
+          ctx.lineTo(cx + current.x * gScale, cy - current.y * gScale);
+          ctx.stroke();
+        }
       }
+
+      const tx = cx + x * gScale;
+      const ty = cy - y * gScale;
+      ctx.strokeStyle = '#a855f7';
+      ctx.fillStyle = '#a855f7';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      const zNorm = Math.max(0, Math.min(1, (z + 0.5) / 2.5));
+      const barW = 12;
+      const barH = R * 2;
+      const bx = w - 28;
+      const by = cy - barH / 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = z >= 0.85 && z <= 1.15 ? '#34d399' : '#fbbf24';
+      ctx.fillRect(bx, by + barH * (1 - zNorm), barW, barH * zNorm);
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.strokeRect(bx, by, barW, barH);
+      ctx.fillStyle = '#dce8ff';
+      ctx.font = '700 10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('Z', bx + barW / 2, by - 6);
+      ctx.fillText(z.toFixed(2) + 'G', bx + barW / 2, by + barH + 14);
     }
 
-    async function refreshSnapshot() {
+    function updatePowertrain(s) {
+      const bmsV = Number(s.bms_voltage) || 0;
+      const bmsI = Number(s.bms_current) || 0;
+      const invV = Number(s.inv_voltage) || 0;
+      const invI = Number(s.inv_dc_current) || 0;
+      const rpm = Number(s.inv_motor_speed) || 0;
+      const speedKmh = Number(s.vehicle_speed_kmh);
+      const speed = Number.isFinite(speedKmh) ? speedKmh : (rpm * 0.0222328);
+      const soc = Number(s.bms_charge) || 0;
+      const bmsP = (bmsV * bmsI) / 1000;
+      const invP = (invV * invI) / 1000;
+      const dcl = Number(s.bms_dcl) || 0;
+      const ccl = Number(s.bms_ccl) || 0;
+      const absI = Math.abs(bmsI);
+
+      document.getElementById('pwr-bms-v').textContent = bmsV.toFixed(1) + ' V';
+      document.getElementById('pwr-bms-i').textContent = bmsI.toFixed(1) + ' A';
+      document.getElementById('pwr-bms-soc').textContent = soc.toFixed(1) + ' %';
+      document.getElementById('pwr-bms-p').textContent = bmsP.toFixed(2) + ' kW';
+      document.getElementById('pwr-bms-t').textContent = (Number(s.bms_temp_maxvalue) || 0).toFixed(1) + ' °C';
+
+      document.getElementById('pwr-inv-v').textContent = invV.toFixed(1) + ' V';
+      document.getElementById('pwr-inv-i').textContent = invI.toFixed(1) + ' A';
+      document.getElementById('pwr-inv-p').textContent = invP.toFixed(2) + ' kW';
+      document.getElementById('pwr-inv-t1').textContent = (Number(s.inv_temp_igt) || 0).toFixed(0) + ' °C';
+
+      document.getElementById('pwr-mot-rpm').textContent = rpm.toFixed(0) + ' rpm';
+      document.getElementById('pwr-mot-t').textContent = (Number(s.inv_temp_motor) || 0).toFixed(1) + ' °C';
+
+      const lim = bmsI >= 0
+        ? (ccl > 0 ? 'CCL ' + absI.toFixed(0) + '/' + ccl.toFixed(0) + ' A' : 'CCL —')
+        : (dcl > 0 ? 'DCL ' + absI.toFixed(0) + '/' + dcl.toFixed(0) + ' A' : 'DCL —');
+      document.getElementById('pwr-mot-lim').textContent = lim;
+      document.getElementById('pwr-link-bms').textContent = bmsI.toFixed(0) + ' A';
+
+      const pre = document.getElementById('pwr-pre');
+      const con = document.getElementById('pwr-con');
+      pre.textContent = s.motor_precharge ? 'pre ON' : 'pre OFF';
+      con.textContent = s.motor_main_contactor ? 'MC ON' : 'MC OFF';
+      pre.classList.toggle('on', !!s.motor_precharge);
+      con.classList.toggle('on', !!s.motor_main_contactor);
+
+      document.getElementById('pwr-link-rpm').textContent =
+        rpm.toFixed(0) + ' rpm · ' + speed.toFixed(1) + ' km/h';
+      const modeCode = Number(s.motor_inverter_mode) ? 1 : 0;
+      const modeLabel = s.motor_inverter_mode_label || (modeCode === 1 ? 'Speed' : 'Torque');
+      document.getElementById('pwr-link-mode').textContent = modeLabel + ' (' + modeCode + ')';
+    }
+
+    async function refresh() {
       try {
-        const [snapshot, stats] = await Promise.all([
-          fetch('/api/live/snapshot', { cache: 'no-store' }).then((r) => r.json()),
-          fetch('/api/stats', { cache: 'no-store' }).then((r) => r.json()),
+        const [snapshotRes, statsRes] = await Promise.all([
+          fetch(apiUrl('/api/live/snapshot'), { cache: 'no-store' }),
+          fetch(apiUrl('/api/stats'), { cache: 'no-store' }),
         ]);
-        const online = stats.hz_5s_avg > 0;
-        setOnline(online);
-        text('hz5', stats.hz_5s_avg, 1);
-        text('speed', snapshot.speed, 0);
-        text('accelValue', snapshot.accel_value, 0);
-        text('brakeValue', snapshot.brake_value, 0);
-        text('steeringAngle', snapshot.steering_angle, 0);
-        text('steeringSpeed', snapshot.steering_speed, 0);
-        text('coreTemp', snapshot.core_temp, 1);
-        text('accelX', snapshot.accel_x, 1);
-        text('accelY', snapshot.accel_y, 1);
-        text('accelZ', snapshot.accel_z, 1);
-        text('linearFl', snapshot.linear_fl, 1);
-        text('linearFr', snapshot.linear_fr, 1);
-        text('linearRl', snapshot.linear_rl, 1);
-        text('linearRr', snapshot.linear_rr, 1);
-        text('rpmLeftA', snapshot.rpm_left, 0);
-        text('rpmLeftB', snapshot.rpm_left, 0);
-        text('rpmRightA', snapshot.rpm_right, 0);
-        text('rpmRightB', snapshot.rpm_right, 0);
-        updateGraphs(snapshot);
+        const snapshot = await snapshotRes.json();
+        const stats = statsRes.ok ? await statsRes.json() : {};
+        const hz = Number(stats.hz_5s_avg);
+        const online = snapshot.live === true;
+        const holding = snapshot.holding === true;
+        document.getElementById('statusChip').classList.toggle('online', online);
+        document.getElementById('status').textContent = online
+          ? 'online'
+          : (holding ? 'hold' : 'offline');
+        text('hz5', online && Number.isFinite(hz) ? hz : 0, 1);
+        document.getElementById('device').textContent = snapshot.device || stats.device || '-';
+
+        // offline이어도 짧은 끊김은 직전 값 유지 (깜빡 0 방지). 오래 끊기면 서버가 0으로 비움.
+        text('stm_ms', snapshot.stm_ms, 0);
+        text('FR', snapshot.FR, 1);
+        text('FL', snapshot.FL, 1);
+        text('RR', snapshot.RR, 1);
+        text('RL', snapshot.RL, 1);
+        text('x_g', snapshot.x_g, 3);
+        text('y_g', snapshot.y_g, 3);
+        text('z_g', snapshot.z_g, 3);
+        text('ecu_temp', snapshot.ecu_temp, 1);
+        text('steering_angle', snapshot.steering_angle, 1);
+        text('steering_speed', snapshot.steering_speed, 1);
+
+        text('inv_temp_igt', snapshot.inv_temp_igt, 1);
+        text('inv_temp_motor', snapshot.inv_temp_motor, 1);
+        text('inv_motor_speed', snapshot.inv_motor_speed, 0);
+        text('vehicle_speed_kmh', snapshot.vehicle_speed_kmh, 1);
+        text('inv_dc_current', snapshot.inv_dc_current, 1);
+        text('inv_voltage', snapshot.inv_voltage, 1);
+        text('INV_shudder_torque', snapshot.INV_shudder_torque, 1);
+        text('INV_torque_feedback', snapshot.INV_torque_feedback, 1);
+        text('INV_torque_commanded', snapshot.INV_torque_commanded, 1);
+        text('INV_id_feedback', snapshot.INV_id_feedback, 1);
+        text('INV_iq_feedback', snapshot.INV_iq_feedback, 1);
+        text('INV_id_command', snapshot.INV_id_command, 1);
+        text('INV_iq_command', snapshot.INV_iq_command, 1);
+        setFlag('flag_precharge', snapshot.motor_precharge, snapshot.motor_precharge ? 'precharge ON' : 'precharge OFF');
+        setFlag('flag_contactor', snapshot.motor_main_contactor, snapshot.motor_main_contactor ? 'main_contactor ON' : 'main_contactor OFF');
+        setFlag('flag_can1', Number(snapshot.can1), Number(snapshot.can1) ? 'CAN1 ON' : 'CAN1 OFF');
+        setFlag('flag_can2', Number(snapshot.can2), Number(snapshot.can2) ? 'CAN2 ON' : 'CAN2 OFF');
+        const modeCode = Number(snapshot.motor_inverter_mode) ? 1 : 0;
+        const modeLabel = snapshot.motor_inverter_mode_label || (modeCode === 1 ? 'Speed' : 'Torque');
+        setFlag('flag_mode', true, 'Run Mode: ' + modeLabel + ' (' + modeCode + ')');
+
+        text('bms_charge', snapshot.bms_charge, 1);
+        text('bms_capacity', snapshot.bms_capacity, 1);
+        text('bms_voltage', snapshot.bms_voltage, 1);
+        text('bms_current', snapshot.bms_current, 1);
+        text('bms_ccl', snapshot.bms_ccl, 1);
+        text('bms_dcl', snapshot.bms_dcl, 1);
+        text('bms_temp_maxvalue', snapshot.bms_temp_maxvalue, 1);
+
+        SERIES.forEach((s) => {
+          pushHistory(s.id, snapshot[s.id]);
+        });
+        drawChartsIfDue(false);
+
+        drawChassis(snapshot.FL, snapshot.FR, snapshot.RL, snapshot.RR, snapshot.steering_angle);
+        drawGVector(snapshot.x_g, snapshot.y_g, snapshot.z_g);
+        updatePowertrain(snapshot);
       } catch (err) {
-        setOnline(false);
         document.getElementById('status').textContent = 'error';
-      } finally {
-        setTimeout(refreshSnapshot, 200);
       }
     }
 
-    pollCameraPreview();
-    setInterval(pollCameraPreview, 500);
-    refreshSnapshot();
-    window.addEventListener('resize', redrawCharts);
-    requestAnimationFrame(() => requestAnimationFrame(redrawCharts));
+    refresh();
+    // 화면 갱신 5Hz (포워드/폴링 부담 완화)
+    setInterval(refresh, 200);
   </script>
 </body>
 </html>

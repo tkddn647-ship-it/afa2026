@@ -35,17 +35,36 @@ SESSION_COOKIE = "afa_session"
 PUBLIC_GET_PATHS = {
     "/login",
     "/auth/sso",
-    "/api/auth/login",
     "/api/auth/status",
+    "/api/auth/login",
+    "/api/sync/commands/next",
+    "/api/stats",
 }
 PUBLIC_POST_PATHS = {
     "/ingest",
+    "/ingest/log",
     "/api/live/ingest",
     "/api/camera/frame",
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/sync/report",
 }
 PUBLIC_GET_PREFIXES = (
     "/api/live/snapshot",
+    "/api/camera/latest.jpg",
+    "/api/camera/latest",
 )
+
+# 로깅 서버(127.0.0.1) → 카메라 서버 연동용. 외부 공개 X
+INTERNAL_LOOPBACK_PREFIXES = (
+    "/api/recording/",
+)
+
+
+def _is_loopback_client(request: Request) -> bool:
+    client = request.client
+    host = (client.host if client else "") or ""
+    return host in {"127.0.0.1", "::1", "localhost"}
 
 
 def auth_enabled() -> bool:
@@ -138,12 +157,40 @@ def credentials_valid(username: str, password: str) -> bool:
     expected_pass = _auth_password()
     if not expected_pass:
         return False
-    return secrets.compare_digest(username.strip(), expected_user) and secrets.compare_digest(password, expected_pass)
+    try:
+        user_ok = secrets.compare_digest(username.strip(), expected_user)
+        pass_ok = secrets.compare_digest(password, expected_pass)
+    except (TypeError, ValueError):
+        return False
+    return user_ok and pass_ok
 
 
 def _wants_html(request: Request) -> bool:
     accept = request.headers.get("accept", "")
     return "text/html" in accept or request.url.path == "/"
+
+
+def _forwarded_prefix(request: Request) -> str:
+    """nginx X-Forwarded-Prefix (/live/, /camera/, /analysis/) → '/live' 형태."""
+    raw = (request.headers.get("x-forwarded-prefix") or "").strip()
+    if not raw:
+        return ""
+    if not raw.startswith("/"):
+        raw = f"/{raw}"
+    return raw.rstrip("/")
+
+
+def _external_path(request: Request, path: str) -> str:
+    """앱 내부 경로를 공개 URL 경로로 변환 (/ → /live/)."""
+    prefix = _forwarded_prefix(request)
+    text = (path or "/").strip() or "/"
+    if not text.startswith("/"):
+        text = f"/{text}"
+    if not prefix:
+        return text
+    if text == "/":
+        return f"{prefix}/"
+    return f"{prefix}{text}"
 
 
 def _is_public_request(request: Request) -> bool:
@@ -154,6 +201,9 @@ def _is_public_request(request: Request) -> bool:
         return True
     if request.method == "GET" and any(path == prefix or path.startswith(prefix + "/") for prefix in PUBLIC_GET_PREFIXES):
         return True
+    # 로깅 서버가 루프백으로 카메라 녹화 start/stop 연동
+    if _is_loopback_client(request) and any(path.startswith(prefix) for prefix in INTERNAL_LOOPBACK_PREFIXES):
+        return True
     return False
 
 
@@ -163,7 +213,16 @@ def build_sso_login_url(base_url: str, username: str, next_path: str = "/") -> s
 
 
 def enrich_nav_with_sso(nav: dict[str, Any], request: Request, current: str) -> dict[str, Any]:
+    """동일 호스트 nginx path 프록시에서는 SSO를 쓰지 않는다.
+
+    SSO redirect Location: / 이 prefix(/live,/camera,/analysis)를 벗겨
+    항상 로깅 루트로 튕기게 만들어 네비가 먹기능이 된다.
+    쿠키 path=/ + 동일 AFA_AUTH_SECRET 이면 서버 이동만으로 충분하다.
+    """
     if not auth_enabled():
+        return nav
+    sso_on = os.getenv("AFA_AUTH_SSO", "0").strip().lower() in {"1", "true", "yes", "on"}
+    if not sso_on:
         return nav
     user = get_request_user(request)
     if not user:
@@ -186,8 +245,9 @@ def auth_template_context(request: Request | None) -> dict[str, Any]:
     }
 
 
-def _login_html(next_path: str, error: str = "") -> str:
+def _login_html(next_path: str, error: str = "", request: Request | None = None) -> str:
     error_block = f'<div class="error">{error}</div>' if error else ""
+    form_action = _external_path(request, "/api/auth/login") if request is not None else "/api/auth/login"
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -259,7 +319,7 @@ def _login_html(next_path: str, error: str = "") -> str:
   </style>
 </head>
 <body>
-  <form class="card" method="post" action="/api/auth/login">
+  <form class="card" method="post" action="{form_action}">
     <h1>로그인</h1>
     <p>AFA 대시보드 접속</p>
     {error_block}
@@ -287,7 +347,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             next_path = request.url.path
             if request.url.query:
                 next_path = f"{next_path}?{request.url.query}"
-            return RedirectResponse(url=f"/login?next={quote(next_path)}", status_code=303)
+            next_external = _external_path(request, next_path)
+            login_url = _external_path(request, f"/login?next={quote(next_external)}")
+            return RedirectResponse(url=login_url, status_code=303)
 
         return JSONResponse(
             status_code=401,
@@ -295,18 +357,31 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
 
-def _safe_next_path(value: str) -> str:
+def _safe_next_path(value: str, request: Request | None = None) -> str:
     if not value or not value.startswith("/") or value.startswith("//"):
-        return "/"
+        return _external_path(request, "/") if request is not None else "/"
+    path = value.split("?", 1)[0]
+    prefix = _forwarded_prefix(request) if request is not None else ""
+    # 예전 버그로 next=/api/auth/login 이 남으면 Method Not Allowed가 남 → 홈으로
+    bare = path
+    if prefix and (path == prefix or path.startswith(prefix + "/")):
+        bare = path[len(prefix) :] or "/"
+    if bare == "/login" or bare.startswith("/api/") or bare.startswith("/auth/"):
+        return _external_path(request, "/") if request is not None else "/"
+    # nginx path 프록시: next=/ 이면 /live/ 등으로 올려준다
+    if request is not None and path == "/":
+        return _external_path(request, "/")
     return value
 
 
 def _set_session_cookie(response: RedirectResponse | JSONResponse, username: str) -> None:
+    secure = os.getenv("AFA_PUBLIC_SCHEME", "https").strip().lower() == "https"
     response.set_cookie(
         key=SESSION_COOKIE,
         value=create_session_token(username),
         httponly=True,
         samesite="lax",
+        secure=secure,
         max_age=_session_seconds(),
         path="/",
     )
@@ -320,9 +395,15 @@ def install_auth(app: FastAPI) -> None:
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request) -> HTMLResponse:
+        next_path = _safe_next_path(request.query_params.get("next", "/"), request)
         if get_request_user(request):
-            return RedirectResponse(url=_safe_next_path(request.query_params.get("next", "/")), status_code=303)
-        return HTMLResponse(_login_html(_safe_next_path(request.query_params.get("next", "/"))))
+            return RedirectResponse(url=next_path, status_code=303)
+        return HTMLResponse(_login_html(next_path, request=request))
+
+    @app.get("/api/auth/login")
+    async def login_get_redirect(request: Request) -> RedirectResponse:
+        # 브라우저 주소창으로 API를 열면 Method Not Allowed 대신 로그인 화면으로
+        return RedirectResponse(url=_external_path(request, "/login"), status_code=303)
 
     @app.post("/api/auth/login")
     async def login_submit(request: Request):
@@ -334,17 +415,17 @@ def install_auth(app: FastAPI) -> None:
                 body = {}
             username = str(body.get("username", "")).strip()
             password = str(body.get("password", ""))
-            next_path = _safe_next_path(str(body.get("next", "/")))
+            next_path = _safe_next_path(str(body.get("next", "/")), request)
         else:
             form = await request.form()
             username = str(form.get("username", "")).strip()
             password = str(form.get("password", ""))
-            next_path = _safe_next_path(str(form.get("next", "/")))
+            next_path = _safe_next_path(str(form.get("next", "/")), request)
 
         if not credentials_valid(username, password):
             if "application/json" in content_type:
                 return JSONResponse(status_code=401, content={"ok": False, "message": "아이디 또는 비밀번호가 올바르지 않습니다."})
-            return HTMLResponse(_login_html(next_path, "아이디 또는 비밀번호가 올바르지 않습니다."), status_code=401)
+            return HTMLResponse(_login_html(next_path, "아이디 또는 비밀번호가 올바르지 않습니다.", request=request), status_code=401)
 
         if "application/json" in content_type:
             response: RedirectResponse | JSONResponse = JSONResponse({"ok": True, "next": next_path})
@@ -355,7 +436,7 @@ def install_auth(app: FastAPI) -> None:
 
     @app.post("/api/auth/logout")
     async def logout(request: Request):
-        response = RedirectResponse(url="/login", status_code=303)
+        response = RedirectResponse(url=_external_path(request, "/login"), status_code=303)
         response.delete_cookie(SESSION_COOKIE, path="/")
         return response
 
@@ -367,10 +448,13 @@ def install_auth(app: FastAPI) -> None:
     @app.get("/auth/sso")
     async def auth_sso(request: Request):
         token = request.query_params.get("token", "")
-        next_path = _safe_next_path(request.query_params.get("next", "/"))
+        next_path = _safe_next_path(request.query_params.get("next", "/"), request)
         user = verify_sso_token(token)
         if not user:
-            return RedirectResponse(url=f"/login?next={quote(next_path)}", status_code=303)
+            return RedirectResponse(
+                url=_external_path(request, f"/login?next={quote(next_path)}"),
+                status_code=303,
+            )
         response = RedirectResponse(url=next_path, status_code=303)
         _set_session_cookie(response, user)
         return response

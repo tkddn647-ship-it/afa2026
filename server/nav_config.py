@@ -5,63 +5,53 @@ from typing import Any
 
 
 def _public_host() -> str:
-    return os.getenv("AFA_PUBLIC_HOST", "127.0.0.1").strip() or "127.0.0.1"
+    return os.getenv("AFA_PUBLIC_HOST", "your.domain.example").strip() or "your.domain.example"
 
 
-def _service_url(port: int) -> str:
-    scheme = os.getenv("AFA_PUBLIC_SCHEME", "http").strip() or "http"
-    return f"{scheme}://{_public_host()}:{port}"
+def _public_scheme() -> str:
+    return os.getenv("AFA_PUBLIC_SCHEME", "https").strip() or "https"
 
 
-LOGGER_URL = os.getenv(
-    "LOGGER_URL",
-    _service_url(int(os.getenv("LOGGER_PORT", "8000"))),
+def _normalize_public_url(url: str, *, trailing_slash: bool = False) -> str:
+    text = (url or "").strip().rstrip("/")
+    if trailing_slash:
+        return f"{text}/"
+    return text
+
+
+# nginx path proxy 공개 URL (항상 trailing slash — /camera 단독은 로깅으로 떨어질 수 있음)
+LOGGER_URL = _normalize_public_url(
+    os.getenv("LOGGER_URL", f"{_public_scheme()}://{_public_host()}")
 )
-REALTIME_URL = os.getenv(
-    "REALTIME_URL",
-    _service_url(int(os.getenv("REALTIME_PORT", "8011"))),
+REALTIME_URL = _normalize_public_url(
+    os.getenv("REALTIME_URL", f"{_public_scheme()}://{_public_host()}/live"),
+    trailing_slash=True,
 )
-CAMERA_URL = os.getenv(
-    "CAMERA_URL",
-    _service_url(int(os.getenv("CAMERA_PORT", "8012"))),
+CAMERA_URL = _normalize_public_url(
+    os.getenv("CAMERA_URL", f"{_public_scheme()}://{_public_host()}/camera"),
+    trailing_slash=True,
 )
-ANALYSIS_URL = os.getenv(
-    "ANALYSIS_URL",
-    _service_url(int(os.getenv("ANALYSIS_PORT", "8011"))),
+ANALYSIS_URL = _normalize_public_url(
+    os.getenv("ANALYSIS_URL", f"{_public_scheme()}://{_public_host()}/analysis"),
+    trailing_slash=True,
 )
 
 
 def nav_context(current: str, request: Any = None) -> dict[str, Any]:
-    if request is not None:
-        host = request.url.hostname or "127.0.0.1"
-        scheme = request.url.scheme or "http"
-        logger_port = int(os.getenv("LOGGER_PORT", "8000"))
-        realtime_port = int(os.getenv("REALTIME_PORT", "8011"))
-        camera_port = int(os.getenv("CAMERA_PORT", "8012"))
-        analysis_port = int(os.getenv("ANALYSIS_PORT", "8011"))
-        nav = {
-            "logger": f"{scheme}://{host}:{logger_port}",
-            "realtime": f"{scheme}://{host}:{realtime_port}",
-            "camera": f"{scheme}://{host}:{camera_port}",
-            "camera_origin": f"{scheme}://{host}:{camera_port}",
-            "analysis": f"{scheme}://{host}:{analysis_port}",
-            "current": current,
-        }
-        try:
-            from afa_auth import auth_template_context, enrich_nav_with_sso
+    nav = {
+        "logger": LOGGER_URL or f"{_public_scheme()}://{_public_host()}",
+        "realtime": REALTIME_URL,
+        "camera": CAMERA_URL,
+        "camera_origin": CAMERA_URL.rstrip("/"),
+        "analysis": ANALYSIS_URL,
+        "current": current,
+    }
+    try:
+        from afa_auth import auth_template_context, enrich_nav_with_sso
 
+        if request is not None:
             nav = enrich_nav_with_sso(nav, request, current)
             return {"nav": nav, **auth_template_context(request)}
-        except ImportError:
-            return {"nav": nav}
-
-    return {
-        "nav": {
-            "logger": LOGGER_URL,
-            "realtime": REALTIME_URL,
-            "camera": CAMERA_URL,
-            "camera_origin": CAMERA_URL,
-            "analysis": ANALYSIS_URL,
-            "current": current,
-        }
-    }
+        return {"nav": nav, **auth_template_context(None)}
+    except ImportError:
+        return {"nav": nav}

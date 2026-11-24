@@ -84,6 +84,30 @@
       background: #000;
       border-radius: 8px;
     }
+    .csv-timeline {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d1117;
+    }
+    .csv-play-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .csv-play-row button {
+      min-width: 44px;
+      padding: 8px 10px;
+    }
+    .csv-time-label {
+      font-variant-numeric: tabular-nums;
+      font-size: 0.82rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
     .meta {
       display: flex;
       flex-wrap: wrap;
@@ -93,12 +117,29 @@
       font-size: 0.78rem;
     }
     .controls { display: grid; gap: 8px; }
+    .col-pickers {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .col-picker-block {
+      display: grid;
+      gap: 6px;
+    }
+    .col-picker-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text);
+    }
     .cols {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      max-height: 120px;
+      max-height: 160px;
       overflow: auto;
+      padding-right: 2px;
     }
     .cols label {
       display: inline-flex;
@@ -116,7 +157,94 @@
       border-color: var(--accent);
       background: rgba(88, 166, 255, 0.12);
     }
-    .chart-wrap { height: min(62vh, 560px); }
+    .chart-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .chart-panel {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #0d1117;
+    }
+    .chart-panel-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .chart-panel-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-wrap { height: min(34vh, 320px); }
+    .value-readout {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #010409;
+      font-size: 0.82rem;
+      min-height: 2.4em;
+      align-items: center;
+    }
+    .value-readout .vr-meta {
+      color: var(--muted);
+      font-size: 0.75rem;
+      width: 100%;
+    }
+    .value-readout .vr-item {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .value-readout .vr-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+    .value-readout .vr-name { color: var(--muted); }
+    .value-readout .vr-val { color: var(--text); font-weight: 700; }
+    .drive-starts {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .drive-starts-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+    .drive-start-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-height: 140px;
+      overflow: auto;
+    }
+    .drive-start-btn {
+      background: #0d1117;
+      color: var(--text);
+      border: 1px solid var(--line);
+      font-weight: 600;
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .drive-start-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .drive-start-btn .ds-clock { font-weight: 800; }
+    .drive-start-btn .ds-meta { color: var(--muted); font-weight: 500; margin-left: 6px; }
+    .drive-start-empty { color: var(--muted); font-size: 0.75rem; }
     @media (max-width: 980px) {
       .workspace { grid-template-columns: 1fr; }
       video { max-height: 40vh; }
@@ -131,26 +259,46 @@
         <h1>AFA Sync Check</h1>
         <div class="sub">영상 + 센서 그래프 동기화 확인 (후처리/KPI/3D 없음)</div>
       </div>
-      <button type="button" class="ghost" id="clearBtn" disabled>세션 닫기</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        {% include "partials/server_nav.html" %}
+        <button type="button" class="ghost" id="clearBtn" disabled>세션 닫기</button>
+      </div>
     </header>
 
     <section class="panel">
       <form id="uploadForm" class="upload-row">
-        <label class="field">CSV
-          <input type="file" id="csvInput" accept=".csv,text/csv">
+        <label class="field">CSV (필수)
+          <input type="file" id="csvInput" accept=".csv,.csv.gz,.zip,text/csv,application/gzip,application/zip">
         </label>
-        <label class="field">영상
+        <label class="field">영상 (선택)
           <input type="file" id="videoInput" accept="video/*,.mp4,.avi,.webm,.mov,.mkv">
         </label>
         <button type="submit" id="uploadBtn">업로드</button>
         <button type="button" class="ghost" id="openExistingBtn">기존 세션 열기</button>
       </form>
-      <div class="status" id="status">기존 세션이 있으면 자동으로 엽니다. 아니면 CSV+영상을 업로드하세요.</div>
+      <div class="upload-row" style="margin-top:8px;grid-template-columns:1fr auto auto;">
+        <label class="field">서버 저장 세션 (CSV 또는 CSV+영상)
+          <select id="savedSessionSelect">
+            <option value="">불러오는 중...</option>
+          </select>
+        </label>
+        <button type="button" id="importSavedBtn">서버에서 열기</button>
+        <button type="button" class="ghost" id="refreshSavedBtn">새로고침</button>
+      </div>
+      <div class="status" id="status">CSV만 올려도 timestamp로 그래프를 재생할 수 있습니다. 영상이 있으면 싱크 확인용으로 함께 씁니다.</div>
     </section>
 
     <section class="workspace" id="workspace" hidden>
       <div class="panel">
         <video id="player" controls playsinline></video>
+        <div id="csvTimeline" class="csv-timeline" hidden>
+          <div class="sub">영상 없음 · CSV timestamp 타임라인</div>
+          <div class="csv-play-row">
+            <button type="button" id="csvPlayBtn" title="재생/일시정지">▶</button>
+            <input type="range" id="csvSeek" min="0" max="1" step="0.01" value="0">
+            <span class="csv-time-label" id="csvTimeLabel">0.00 / 0.00</span>
+          </div>
+        </div>
         <div class="meta">
           <span id="metaCsv">CSV: -</span>
           <span id="metaVideo">Video: -</span>
@@ -166,14 +314,58 @@
             <input type="range" id="windowRange" min="5" max="60" step="1" value="15">
           </label>
           <div>
-            <div class="sub" style="margin-bottom:4px">그래프 컬럼 (최대 4개)</div>
-            <div class="cols" id="colList"></div>
+            <div class="sub" style="margin-bottom:4px">오프셋/윈도우는 그래프창 1·2 공통 · 단위 다른 센서는 창을 나눠 보세요</div>
+            <label style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;color:var(--text);cursor:pointer;margin-right:12px">
+              <input type="checkbox" id="robustScale" checked>
+              스파이크 무시 · 움직임 강조 (Y축)
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:5px;font-size:0.78rem;color:var(--muted);cursor:pointer" title="노이즈/튀는 값에 Y축을 더 세게 조입니다">
+              <input type="checkbox" id="robustStrong" checked>
+              강하게
+            </label>
+          </div>
+        </div>
+        <div class="col-pickers">
+          <div class="col-picker-block">
+            <div class="col-picker-title">그래프창 1 · 최대 4컬럼</div>
+            <div class="sub">재생 위치 기준 앞뒤 윈도우 · 세로선 = now</div>
+            <div class="cols" id="colListA"></div>
+          </div>
+          <div class="col-picker-block">
+            <div class="col-picker-title">그래프창 2 · 최대 4컬럼</div>
+            <div class="sub">단위 다른 센서군은 여기로 나눠 보세요</div>
+            <div class="cols" id="colListB"></div>
+          </div>
+        </div>
+        <div class="drive-starts" id="driveStarts">
+          <div class="drive-starts-title">주행 시작</div>
+          <div class="sub" style="margin-bottom:6px">차속이 다시 붙는 시각 · 누르면 그 시간으로 이동</div>
+          <div class="drive-start-list" id="driveStartList">
+            <span class="drive-start-empty">세션을 열면 여기에 출발 시각이 나옵니다.</span>
           </div>
         </div>
       </div>
-      <div class="panel">
-        <div class="sub" style="margin-bottom:6px">재생 위치 기준 앞뒤 윈도우 · 세로선 = now</div>
-        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="panel chart-stack">
+        <div class="chart-panel" data-chart="a">
+          <div class="chart-panel-head">
+            <span class="chart-panel-title">그래프창 1</span>
+            <span class="sub">컬럼 선택은 왼쪽</span>
+          </div>
+          <div class="chart-wrap"><canvas id="chartA"></canvas></div>
+          <div class="value-readout" id="valueReadoutA">
+            <span class="vr-meta">선택한 값이 여기에 표시됩니다.</span>
+          </div>
+        </div>
+        <div class="chart-panel" data-chart="b">
+          <div class="chart-panel-head">
+            <span class="chart-panel-title">그래프창 2</span>
+            <span class="sub">컬럼 선택은 왼쪽</span>
+          </div>
+          <div class="chart-wrap"><canvas id="chartB"></canvas></div>
+          <div class="value-readout" id="valueReadoutB">
+            <span class="vr-meta">선택한 값이 여기에 표시됩니다.</span>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -182,32 +374,298 @@
     const COLORS = ['#58a6ff', '#3fb950', '#d29922', '#f85149', '#a371f7', '#ff7b72'];
     let sessionId = '';
     let columns = [];
-    let selected = new Set();
-    let chart = null;
+    let selectedA = new Set();
+    let selectedB = new Set();
+    let chartA = null;
+    let chartB = null;
     let fetchTimer = null;
     let busy = false;
+    let refreshPending = false;
+    let windowAbort = null;
+    let windowSeq = 0;
+    let videoSyncTimer = null;
+    let hoverRelSecA = null;
+    let hoverRelSecB = null;
+    let hasVideo = true;
+    let csvDuration = 0;
+    let csvPlayhead = 0;
+    let csvPlaying = false;
+    let csvPlayRaf = 0;
+    let csvPlayLastTs = 0;
 
     const workspace = document.getElementById('workspace');
     const player = document.getElementById('player');
+    const csvTimeline = document.getElementById('csvTimeline');
+    const csvSeek = document.getElementById('csvSeek');
+    const csvPlayBtn = document.getElementById('csvPlayBtn');
+    const csvTimeLabel = document.getElementById('csvTimeLabel');
     const offsetRange = document.getElementById('offsetRange');
     const windowRange = document.getElementById('windowRange');
 
+    function formatClock(sec) {
+      const s = Math.max(0, Number(sec) || 0);
+      const m = Math.floor(s / 60);
+      const r = s - m * 60;
+      return m + ':' + r.toFixed(2).padStart(5, '0');
+    }
+
+    function updateCsvTimeUi() {
+      if (!csvSeek || !csvTimeLabel) return;
+      csvSeek.max = String(Math.max(csvDuration, 0.01));
+      csvSeek.value = String(Math.min(csvPlayhead, csvDuration));
+      csvTimeLabel.textContent = formatClock(csvPlayhead) + ' / ' + formatClock(csvDuration);
+      csvPlayBtn.textContent = csvPlaying ? '⏸' : '▶';
+    }
+
+    function stopCsvPlayback() {
+      csvPlaying = false;
+      if (csvPlayRaf) {
+        cancelAnimationFrame(csvPlayRaf);
+        csvPlayRaf = 0;
+      }
+      csvPlayLastTs = 0;
+      if (csvPlayBtn) csvPlayBtn.textContent = '▶';
+    }
+
+    function setCsvPlayhead(t, opts) {
+      const force = !!(opts && opts.force);
+      const fromUi = !!(opts && opts.fromUi);
+      csvPlayhead = Math.max(0, Math.min(csvDuration || 0, Number(t) || 0));
+      if (!fromUi) updateCsvTimeUi();
+      scheduleRefresh(force);
+    }
+
+    function csvPlayTick(ts) {
+      if (!csvPlaying || hasVideo) return;
+      if (!csvPlayLastTs) csvPlayLastTs = ts;
+      const dt = Math.min(0.25, (ts - csvPlayLastTs) / 1000);
+      csvPlayLastTs = ts;
+      const next = csvPlayhead + dt;
+      if (next >= csvDuration) {
+        setCsvPlayhead(csvDuration, { force: true });
+        stopCsvPlayback();
+        return;
+      }
+      setCsvPlayhead(next, { force: false });
+      csvPlayRaf = requestAnimationFrame(csvPlayTick);
+    }
+
+    function toggleCsvPlayback() {
+      if (hasVideo || !sessionId) return;
+      if (csvPlaying) {
+        stopCsvPlayback();
+        return;
+      }
+      if (csvPlayhead >= csvDuration - 1e-3) setCsvPlayhead(0, { force: true });
+      csvPlaying = true;
+      csvPlayBtn.textContent = '⏸';
+      csvPlayLastTs = 0;
+      csvPlayRaf = requestAnimationFrame(csvPlayTick);
+    }
+
+    function getPlayhead() {
+      if (hasVideo) return player.currentTime || 0;
+      return csvPlayhead || 0;
+    }
+
+    function seekToRel(tRel) {
+      const offset = Number(offsetRange.value || 0);
+      const t = Math.max(0, Number(tRel || 0) - offset);
+      if (hasVideo) {
+        try { player.pause(); } catch (_) {}
+        player.currentTime = t;
+        scheduleRefresh(true);
+        return;
+      }
+      stopCsvPlayback();
+      setCsvPlayhead(t, { force: true });
+    }
+
+    async function loadDriveStarts(sid) {
+      const id = sid || sessionId;
+      if (!id) return;
+      try {
+        const res = await fetch(apiUrl('/api/session/' + id + '/drive-starts'), { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          renderDriveStarts([]);
+          return;
+        }
+        renderDriveStarts(data.drive_starts || []);
+      } catch (_) {
+        renderDriveStarts([]);
+      }
+    }
+
+    function renderDriveStarts(starts) {
+      const box = document.getElementById('driveStartList');
+      if (!box) return;
+      const rows = Array.isArray(starts) ? starts : [];
+      if (!rows.length) {
+        box.innerHTML = '<span class="drive-start-empty">차속 기준으로 잡은 출발이 없습니다. 세션을 다시 여세요.</span>';
+        return;
+      }
+      box.innerHTML = '';
+      rows.forEach((row) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'drive-start-btn';
+        const clock = row.clock || formatClock(row.t_rel);
+        const spd = (row.speed != null) ? (' · ' + Number(row.speed).toFixed(0) + ' km/h') : '';
+        btn.innerHTML = '<span class="ds-clock">' + clock + '</span>'
+          + '<span class="ds-meta">#' + (row.n || '') + ' · +' + formatClock(row.t_rel) + spd + '</span>';
+        btn.title = '이 시각으로 이동';
+        btn.addEventListener('click', () => seekToRel(row.t_rel));
+        box.appendChild(btn);
+      });
+    }
     function setStatus(msg, kind) {
       const el = document.getElementById('status');
       el.className = 'status' + (kind ? ' ' + kind : '');
       el.textContent = msg;
     }
 
-    function renderColumns(cols) {
-      columns = cols || [];
-      const preferred = ['speed', 'accelX', 'accelY', 'steering_angle', 'break_p', 'accel_p'];
-      selected = new Set();
-      for (const c of preferred) {
-        if (columns.includes(c) && selected.size < 4) selected.add(c);
-      }
-      if (!selected.size) columns.slice(0, 4).forEach((c) => selected.add(c));
+    // nginx path proxy (/analysis/) — absolute /api 는 로깅 서버로 감
+    const APP_BASE = (() => {
+      const m = location.pathname.match(/^(\/analysis)(?=\/|$)/);
+      return m ? m[1] : '';
+    })();
+    function apiUrl(path) {
+      const p = path.startsWith('/') ? path : ('/' + path);
+      return APP_BASE + p;
+    }
 
-      const box = document.getElementById('colList');
+    function formatSeriesVal(y) {
+      const n = Number(y);
+      if (!Number.isFinite(n)) return '-';
+      const a = Math.abs(n);
+      if (a >= 1000) return n.toFixed(0);
+      if (a >= 100) return n.toFixed(1);
+      if (a >= 10) return n.toFixed(2);
+      return n.toFixed(3);
+    }
+
+    function percentileOfSorted(sorted, pct) {
+      if (!sorted.length) return 0;
+      const p = Math.max(0, Math.min(100, pct));
+      const k = (sorted.length - 1) * (p / 100);
+      const lo = Math.floor(k);
+      const hi = Math.ceil(k);
+      if (lo === hi) return sorted[lo];
+      return sorted[lo] + (sorted[hi] - sorted[lo]) * (k - lo);
+    }
+
+    function collectFiniteY(datasets) {
+      const ys = [];
+      for (const ds of datasets) {
+        for (const pt of ds.data || []) {
+          const y = Number(pt.y);
+          if (Number.isFinite(y)) ys.push(y);
+        }
+      }
+      return ys;
+    }
+
+    /** 스파이크가 Y축을 벌리지 않게 percentile + MAD 로 지그재그 움직임 강조 */
+    function robustYLimits(ys, strong) {
+      if (!ys.length) return { min: undefined, max: undefined };
+      if (ys.length === 1) {
+        const v = ys[0];
+        return { min: v - 1, max: v + 1 };
+      }
+      const sorted = [...ys].sort((a, b) => a - b);
+      // 보통: p8–p92 / 강하게: p15–p85 로 더 세게 조임
+      const loPct = strong ? 15 : 8;
+      const hiPct = strong ? 85 : 92;
+      let lo = percentileOfSorted(sorted, loPct);
+      let hi = percentileOfSorted(sorted, hiPct);
+      const med = percentileOfSorted(sorted, 50);
+      const absDev = ys.map((y) => Math.abs(y - med)).sort((a, b) => a - b);
+      const mad = percentileOfSorted(absDev, 50);
+      if (mad > 1e-9) {
+        // 보통 2.8σ, 강하게 2.0σ 상당
+        const k = strong ? 2.0 : 2.8;
+        const spread = k * mad * 1.4826;
+        const tightLo = med - spread;
+        const tightHi = med + spread;
+        // 더 좁은 쪽을 우선 (튀는 값에 덜 끌려감)
+        lo = Math.max(lo, tightLo);
+        hi = Math.min(hi, tightHi);
+      }
+      if (!(hi > lo)) {
+        const span = Math.max(Math.abs(med) * 0.02, 1e-3);
+        lo = med - span;
+        hi = med + span;
+      }
+      const pad = Math.max((hi - lo) * (strong ? 0.05 : 0.08), 1e-6);
+      return { min: lo - pad, max: hi + pad };
+    }
+
+    function applyYScale(c, robust, strong) {
+      if (!c || !c.options || !c.options.scales || !c.options.scales.y) return;
+      if (!robust) {
+        delete c.options.scales.y.min;
+        delete c.options.scales.y.max;
+        return;
+      }
+      const limits = robustYLimits(collectFiniteY(c.data.datasets), !!strong);
+      if (limits.min === undefined || limits.max === undefined) return;
+      c.options.scales.y.min = limits.min;
+      c.options.scales.y.max = limits.max;
+    }
+
+    function nearestYAtX(points, x) {
+      if (!points || !points.length) return null;
+      let best = points[0];
+      let bestD = Math.abs(Number(best.x) - x);
+      for (let i = 1; i < points.length; i++) {
+        const d = Math.abs(Number(points[i].x) - x);
+        if (d < bestD) {
+          best = points[i];
+          bestD = d;
+        }
+      }
+      return best ? best.y : null;
+    }
+
+    function updateValueReadout(which, relSec) {
+      const box = document.getElementById(which === 'b' ? 'valueReadoutB' : 'valueReadoutA');
+      const c = which === 'b' ? chartB : chartA;
+      const hover = which === 'b' ? hoverRelSecB : hoverRelSecA;
+      if (!box) return;
+      const datasets = (c && c.data && c.data.datasets) || [];
+      if (!datasets.length) {
+        box.innerHTML = '<span class="vr-meta">선택한 값이 여기에 표시됩니다.</span>';
+        return;
+      }
+      const x = Number.isFinite(relSec) ? relSec : 0;
+      const modeLabel = (hover == null)
+        ? 'now (재생 위치)'
+        : ('호버 t=' + x.toFixed(3) + 's');
+      let html = '<span class="vr-meta">' + modeLabel + '</span>';
+      datasets.forEach((ds) => {
+        const y = nearestYAtX(ds.data, x);
+        const color = ds.borderColor || '#8b949e';
+        html += '<span class="vr-item">'
+          + '<span class="vr-dot" style="background:' + color + '"></span>'
+          + '<span class="vr-name">' + (ds.label || '') + '</span>'
+          + '<span class="vr-val">' + formatSeriesVal(y) + '</span>'
+          + '</span>';
+      });
+      box.innerHTML = html;
+    }
+
+    function pickDefaults(preferred, limit) {
+      const out = new Set();
+      for (const c of preferred) {
+        if (columns.includes(c) && out.size < limit) out.add(c);
+      }
+      if (!out.size) columns.slice(0, limit).forEach((c) => out.add(c));
+      return out;
+    }
+
+    function renderColumnPicker(boxId, selected, which) {
+      const box = document.getElementById(boxId);
       box.innerHTML = '';
       columns.forEach((col) => {
         const label = document.createElement('label');
@@ -234,20 +692,89 @@
       });
     }
 
-    function ensureChart() {
-      if (chart) return chart;
-      const ctx = document.getElementById('chart').getContext('2d');
-      chart = new Chart(ctx, {
+    function renderColumns(cols) {
+      columns = cols || [];
+      selectedA = pickDefaults(['x_g', 'y_g', 'z_g', 'ecu_temp', 'steering_angle'], 4);
+      selectedB = pickDefaults([
+        'inv_motor_speed', 'inv_dc_current', 'inv_voltage',
+        'INV_torque_feedback', 'INV_torque_commanded', 'INV_iq_feedback',
+        'bms_voltage', 'bms_current', 'bms_charge',
+      ], 4);
+      selectedB = new Set([...selectedB].filter((c) => !selectedA.has(c)));
+      for (const c of columns) {
+        if (selectedB.size >= 4) break;
+        if (!selectedA.has(c) && !selectedB.has(c)) selectedB.add(c);
+      }
+      renderColumnPicker('colListA', selectedA, 'a');
+      renderColumnPicker('colListB', selectedB, 'b');
+    }
+
+    function nowLinePlugin() {
+      return {
+        id: 'nowLine',
+        afterDraw(c) {
+          const xScale = c.scales.x;
+          const yScale = c.scales.y;
+          if (!xScale || !yScale) return;
+          const x = xScale.getPixelForValue(0);
+          const ctx2 = c.ctx;
+          ctx2.save();
+          ctx2.strokeStyle = '#f85149';
+          ctx2.lineWidth = 1.5;
+          ctx2.beginPath();
+          ctx2.moveTo(x, yScale.top);
+          ctx2.lineTo(x, yScale.bottom);
+          ctx2.stroke();
+          ctx2.restore();
+        },
+      };
+    }
+
+    function createChart(canvasId, which) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      const chart = new Chart(ctx, {
         type: 'line',
         data: { datasets: [] },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           animation: false,
-          interaction: { mode: 'nearest', intersect: false },
+          interaction: { mode: 'index', intersect: false, axis: 'x' },
+          onHover(evt, elements, c) {
+            if (!elements || !elements.length) {
+              if (which === 'b') hoverRelSecB = null;
+              else hoverRelSecA = null;
+              updateValueReadout(which, 0);
+              return;
+            }
+            const idx = elements[0].index;
+            const ds0 = c.data.datasets[0];
+            const pt = ds0 && ds0.data ? ds0.data[idx] : null;
+            if (pt && Number.isFinite(Number(pt.x))) {
+              const x = Number(pt.x);
+              if (which === 'b') hoverRelSecB = x;
+              else hoverRelSecA = x;
+              updateValueReadout(which, x);
+            }
+          },
           plugins: {
             legend: { labels: { color: '#e6edf3', boxWidth: 10 } },
-            tooltip: { enabled: true },
+            tooltip: {
+              enabled: true,
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                title(items) {
+                  if (!items.length) return '';
+                  const x = items[0].parsed && items[0].parsed.x;
+                  return 'rel ' + (Number.isFinite(x) ? Number(x).toFixed(3) : '-') + ' s';
+                },
+                label(item) {
+                  const y = item.parsed && item.parsed.y;
+                  return (item.dataset.label || '') + ': ' + formatSeriesVal(y);
+                },
+              },
+            },
           },
           scales: {
             x: {
@@ -262,97 +789,200 @@
             },
           },
         },
-        plugins: [{
-          id: 'nowLine',
-          afterDraw(c) {
-            const xScale = c.scales.x;
-            const yScale = c.scales.y;
-            if (!xScale || !yScale) return;
-            const x = xScale.getPixelForValue(0);
-            const ctx2 = c.ctx;
-            ctx2.save();
-            ctx2.strokeStyle = '#f85149';
-            ctx2.lineWidth = 1.5;
-            ctx2.beginPath();
-            ctx2.moveTo(x, yScale.top);
-            ctx2.lineTo(x, yScale.bottom);
-            ctx2.stroke();
-            ctx2.restore();
-          },
-        }],
+        plugins: [nowLinePlugin()],
+      });
+      document.getElementById(canvasId).addEventListener('mouseleave', () => {
+        if (which === 'b') hoverRelSecB = null;
+        else hoverRelSecA = null;
+        updateValueReadout(which, 0);
       });
       return chart;
     }
 
-    function scheduleRefresh(force) {
-      document.getElementById('metaNow').textContent = 't: ' + (player.currentTime || 0).toFixed(2) + 's';
-      if (fetchTimer) clearTimeout(fetchTimer);
-      fetchTimer = setTimeout(() => refreshChart(force), force ? 0 : 120);
+    function ensureCharts() {
+      if (!chartA) chartA = createChart('chartA', 'a');
+      if (!chartB) chartB = createChart('chartB', 'b');
+      return { chartA, chartB };
     }
 
-    async function refreshChart() {
-      if (!sessionId || busy) return;
-      const cols = Array.from(selected);
-      if (!cols.length) return;
-      busy = true;
-      try {
-        const t = player.currentTime || 0;
-        const offset = Number(offsetRange.value || 0);
-        const windowSec = Number(windowRange.value || 15);
-        const url = '/api/session/' + sessionId + '/window'
-          + '?t=' + encodeURIComponent(t)
-          + '&offset=' + encodeURIComponent(offset)
-          + '&window=' + encodeURIComponent(windowSec)
-          + '&cols=' + encodeURIComponent(cols.join(','));
-        const data = await fetch(url, { cache: 'no-store' }).then((r) => r.json());
-        if (!data.ok) throw new Error(data.detail || 'window failed');
-        const c = ensureChart();
-        const xs = data.x || [];
-        c.data.datasets = cols.map((col, i) => {
-          const ys = (data.series && data.series[col]) || [];
-          return {
-            label: col,
-            data: xs.map((x, idx) => ({ x, y: ys[idx] })),
-            borderColor: COLORS[i % COLORS.length],
-            backgroundColor: 'transparent',
-            pointRadius: 0,
-            borderWidth: 1.6,
-            tension: 0.05,
-          };
-        });
-        c.update('none');
-      } catch (err) {
-        // keep quiet during scrub
-      } finally {
-        busy = false;
+    function scheduleRefresh(force) {
+      document.getElementById('metaNow').textContent = 't: ' + (getPlayhead() || 0).toFixed(2) + 's';
+      if (busy) {
+        refreshPending = true;
+        return;
+      }
+      if (force) {
+        if (fetchTimer) clearTimeout(fetchTimer);
+        fetchTimer = setTimeout(() => {
+          fetchTimer = null;
+          refreshChart();
+        }, 0);
+        return;
+      }
+      // 재생 중 throttle (~5Hz) — debounce 리셋으로 요청이 안 나가던 문제 방지
+      if (fetchTimer) return;
+      fetchTimer = setTimeout(() => {
+        fetchTimer = null;
+        refreshChart();
+      }, 200);
+    }
+
+    function startVideoSyncLoop() {
+      stopVideoSyncLoop();
+      if (!hasVideo || !sessionId) return;
+      videoSyncTimer = setInterval(() => {
+        if (!hasVideo || !sessionId) return;
+        if (player.paused || player.ended) return;
+        scheduleRefresh(false);
+      }, 200);
+    }
+
+    function stopVideoSyncLoop() {
+      if (videoSyncTimer) {
+        clearInterval(videoSyncTimer);
+        videoSyncTimer = null;
       }
     }
 
+    function paintChart(c, cols, xs, seriesMap, robust, strong) {
+      c.data.datasets = cols.map((col, i) => {
+        const ys = (seriesMap && seriesMap[col]) || [];
+        return {
+          label: col,
+          data: xs.map((x, idx) => ({ x, y: ys[idx] })),
+          borderColor: COLORS[i % COLORS.length],
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          borderWidth: 1.6,
+          tension: 0.08,
+        };
+      });
+      applyYScale(c, robust, strong);
+      c.update('none');
+    }
+
+    async function refreshChart() {
+      if (!sessionId) {
+        refreshPending = true;
+        return;
+      }
+      const colsA = Array.from(selectedA);
+      const colsB = Array.from(selectedB);
+      const union = Array.from(new Set([...colsA, ...colsB]));
+      if (!union.length) return;
+
+      const tAtStart = getPlayhead();
+      const seq = ++windowSeq;
+      if (windowAbort) {
+        try { windowAbort.abort(); } catch (_) {}
+      }
+      windowAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      busy = true;
+      refreshPending = false;
+      try {
+        const t = tAtStart;
+        const offset = Number(offsetRange.value || 0);
+        const windowSec = Number(windowRange.value || 15);
+        const url = apiUrl('/api/session/' + sessionId + '/window')
+          + '?t=' + encodeURIComponent(t)
+          + '&offset=' + encodeURIComponent(offset)
+          + '&window=' + encodeURIComponent(windowSec)
+          + '&cols=' + encodeURIComponent(union.join(','));
+        const opts = { cache: 'no-store' };
+        if (windowAbort) opts.signal = windowAbort.signal;
+        const data = await fetch(url, opts).then((r) => r.json());
+        if (seq !== windowSeq) return;
+        if (!data.ok) throw new Error(data.detail || 'window failed');
+        // 응답이 현재 playhead보다 너무 오래됐으면 버리고 최신 재요청
+        if (Math.abs(getPlayhead() - tAtStart) > 0.6) {
+          refreshPending = true;
+          return;
+        }
+        const { chartA: ca, chartB: cb } = ensureCharts();
+        const xs = data.x || [];
+        const robust = document.getElementById('robustScale').checked;
+        const strong = document.getElementById('robustStrong').checked;
+        paintChart(ca, colsA, xs, data.series, robust, strong);
+        paintChart(cb, colsB, xs, data.series, robust, strong);
+        updateValueReadout('a', hoverRelSecA == null ? 0 : hoverRelSecA);
+        updateValueReadout('b', hoverRelSecB == null ? 0 : hoverRelSecB);
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      } finally {
+        if (seq !== windowSeq) return;
+        busy = false;
+        if (refreshPending || Math.abs(getPlayhead() - tAtStart) > 0.08) {
+          refreshPending = false;
+          scheduleRefresh(false);
+        } else if (csvPlaying && !hasVideo) {
+          scheduleRefresh(false);
+        }
+      }
+    }
     function applySession(data, sid) {
+      stopCsvPlayback();
       sessionId = data.session_id || sid;
+      hasVideo = (typeof data.has_video === 'boolean')
+        ? data.has_video
+        : !!(data.video_url || (data.video_name && data.video_name !== ''));
+      if (data.source === 'csv_only' || (data.playback && data.playback.mode === 'csv_timeline')) {
+        hasVideo = false;
+      }
       workspace.hidden = false;
       document.getElementById('clearBtn').disabled = false;
       document.getElementById('metaCsv').textContent = 'CSV: ' + (data.csv_name || 'data.csv');
-      document.getElementById('metaVideo').textContent = 'Video: ' + (data.video_name || 'video');
+      document.getElementById('metaVideo').textContent = hasVideo
+        ? ('Video: ' + (data.video_name || 'video'))
+        : 'Video: (없음 · CSV timeline)';
       document.getElementById('metaRows').textContent = 'rows: ' + (data.row_count || '-');
-      document.getElementById('metaDur').textContent = 'span: ' + Number(data.duration_sec || 0).toFixed(1) + 's';
+      csvDuration = Math.max(0, Number(data.duration_sec || 0));
+      document.getElementById('metaDur').textContent = 'span: ' + csvDuration.toFixed(1) + 's';
       renderColumns(data.columns || []);
-      player.src = (data.video_url || ('/api/session/' + sessionId + '/video')) + '?_=' + Date.now();
-      player.load();
+      renderDriveStarts(data.drive_starts || []);
+      loadDriveStarts(sessionId);
+
+      player.hidden = !hasVideo;
+      csvTimeline.hidden = hasVideo;
+      if (hasVideo) {
+        const rawVideo = data.video_url || ('/api/session/' + sessionId + '/video');
+        player.src = apiUrl(rawVideo) + '?_=' + Date.now();
+        player.load();
+      } else {
+        player.removeAttribute('src');
+        player.load();
+        csvPlayhead = 0;
+        updateCsvTimeUi();
+      }
+
       const offset = Number((data.sync && data.sync.offset_sec) || data.offset_sec || 0);
       offsetRange.value = String(offset);
       document.getElementById('offsetLabel').textContent = offset.toFixed(1);
+      // CSV-only: 오프셋은 거의 불필요 → 기본 0 유지, UI는 그대로 둠
       scheduleRefresh(true);
-      setStatus('세션 준비됨 · 오프셋 슬라이더로 싱크 맞추세요 · ' + sessionId, 'ok');
+      if (hasVideo) startVideoSyncLoop();
+      else stopVideoSyncLoop();
+      const pb = data.playback;
+      if (!hasVideo) {
+        setStatus('CSV-only · timestamp 스크럽/재생으로 그래프 확인 · ' + sessionId, 'ok');
+      } else if (pb && pb.message) {
+        const mb = (n) => (n >= 1024 * 1024 ? (n / (1024 * 1024)).toFixed(0) + 'MB' : n + 'B');
+        let extra = '재생 준비: ' + pb.message;
+        if (pb.play_bytes && pb.source_bytes && pb.play_bytes !== pb.source_bytes) {
+          extra += ' (' + mb(pb.source_bytes) + ' → ' + mb(pb.play_bytes) + ')';
+        }
+        setStatus(extra + ' · 오프셋으로 싱크 · ' + sessionId, 'ok');
+      } else {
+        setStatus('세션 준비됨 · 오프셋 슬라이더로 싱크 맞추세요 · ' + sessionId, 'ok');
+      }
       history.replaceState(null, '', '?session=' + encodeURIComponent(sessionId));
     }
 
     async function openExistingSession(sid) {
       setStatus('세션 불러오는 중...');
-      let res = await fetch('/api/session/' + sid + '/restore', { method: 'POST' });
+      let res = await fetch(apiUrl('/api/session/' + sid + '/restore'), { method: 'POST' });
       let data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) {
-        res = await fetch('/api/session/' + sid, { cache: 'no-store' });
+        res = await fetch(apiUrl('/api/session/' + sid), { cache: 'no-store' });
         data = await res.json().catch(() => ({}));
       }
       if (!res.ok || !data.ok) throw new Error(data.detail || data.message || 'session open failed');
@@ -363,18 +993,20 @@
       e.preventDefault();
       const csv = document.getElementById('csvInput').files[0];
       const video = document.getElementById('videoInput').files[0];
-      if (!csv || !video) {
-        setStatus('CSV와 영상을 모두 선택하세요.', 'err');
+      if (!csv) {
+        setStatus('CSV 파일을 선택하세요. (영상은 선택)', 'err');
         return;
       }
       const btn = document.getElementById('uploadBtn');
       btn.disabled = true;
-      setStatus('업로드 중... (후처리 없이 sync만)');
+      setStatus(video
+        ? '업로드 중... (faststart remux · 재인코딩 없음)'
+        : 'CSV만 업로드 중... (timestamp 타임라인)');
       try {
         const body = new FormData();
         body.append('csv_file', csv);
-        body.append('video_file', video);
-        const res = await fetch('/api/upload', { method: 'POST', body });
+        if (video) body.append('video_file', video);
+        const res = await fetch(apiUrl('/api/upload'), { method: 'POST', body });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.ok) {
           const detail = data.detail;
@@ -393,11 +1025,11 @@
 
     document.getElementById('openExistingBtn').addEventListener('click', async () => {
       try {
-        const list = await fetch('/api/sessions', { cache: 'no-store' }).then((r) => r.json());
+        const list = await fetch(apiUrl('/api/sessions'), { cache: 'no-store' }).then((r) => r.json());
         const sid = (list.sessions && list.sessions[0] && list.sessions[0].session_id)
           || (list.disk_sessions && list.disk_sessions[0]);
         if (!sid) {
-          setStatus('열려 있는/디스크 세션이 없습니다.', 'err');
+          setStatus('열려 있는/디스크 세션이 없습니다. 아래 서버 저장 세션을 쓰세요.', 'err');
           return;
         }
         await openExistingSession(sid);
@@ -406,13 +1038,95 @@
       }
     });
 
+    function formatBytes(n) {
+      const v = Number(n || 0);
+      if (v < 1024) return v + ' B';
+      if (v < 1024 * 1024) return (v / 1024).toFixed(1) + ' KB';
+      return (v / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    async function refreshSavedSessions() {
+      const select = document.getElementById('savedSessionSelect');
+      select.innerHTML = '<option value="">불러오는 중...</option>';
+      try {
+        const list = await fetch(apiUrl('/api/saved-sessions'), { cache: 'no-store' }).then((r) => r.json());
+        const rows = (list && list.sessions) || [];
+        select.innerHTML = '';
+        if (!rows.length) {
+          select.innerHTML = '<option value="">서버에 저장된 세션 없음</option>';
+          return;
+        }
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = rows.length + '개 세션 — 선택';
+        select.appendChild(placeholder);
+        rows.forEach((row) => {
+          const opt = document.createElement('option');
+          opt.value = row.saved_id;
+          const mark = row.ready
+            ? (row.has_video ? 'READY' : 'CSV만')
+            : (row.has_csv ? 'CSV만' : '영상만');
+          if (!row.has_csv) opt.disabled = true;
+          else opt.disabled = false;
+          opt.textContent = '[' + mark + '] ' + row.saved_id
+            + (row.csv ? ' · ' + row.csv : '')
+            + (row.video ? ' · ' + row.video : '')
+            + ' · ' + formatBytes(row.bytes);
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        select.innerHTML = '<option value="">목록 실패</option>';
+        setStatus('서버 세션 목록 실패: ' + (err.message || err), 'err');
+      }
+    }
+
+    document.getElementById('refreshSavedBtn').addEventListener('click', () => {
+      refreshSavedSessions();
+    });
+
+    document.getElementById('importSavedBtn').addEventListener('click', async () => {
+      const savedId = document.getElementById('savedSessionSelect').value;
+      if (!savedId) {
+        setStatus('서버 저장 세션을 선택하세요.', 'err');
+        return;
+      }
+      const btn = document.getElementById('importSavedBtn');
+      btn.disabled = true;
+      setStatus('서버 저장본 가져오는 중... (faststart remux만, 1.8GB면 수 분 · 재인코딩 없음) · ' + savedId);
+      try {
+        const res = await fetch(apiUrl('/api/import-saved/' + encodeURIComponent(savedId)), { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          throw new Error(data.detail || data.message || 'import failed');
+        }
+        applySession(data, data.session_id);
+        const pb = data.playback && data.playback.message ? ' · ' + data.playback.message : '';
+        setStatus('서버 세션 열림 · ' + savedId + ' → ' + data.session_id + pb, 'ok');
+      } catch (err) {
+        setStatus('서버에서 열기 실패: ' + (err.message || err), 'err');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     document.getElementById('clearBtn').addEventListener('click', async () => {
+      stopCsvPlayback();
+      stopVideoSyncLoop();
+      if (windowAbort) {
+        try { windowAbort.abort(); } catch (_) {}
+      }
       sessionId = '';
+      hasVideo = true;
+      csvDuration = 0;
+      csvPlayhead = 0;
+      player.hidden = false;
+      csvTimeline.hidden = true;
       player.removeAttribute('src');
       player.load();
       workspace.hidden = true;
       document.getElementById('clearBtn').disabled = true;
-      if (chart) { chart.destroy(); chart = null; }
+      if (chartA) { chartA.destroy(); chartA = null; }
+      if (chartB) { chartB.destroy(); chartB = null; }
       history.replaceState(null, '', location.pathname);
       setStatus('세션을 닫았습니다. (파일은 서버에 남아 있습니다)');
     });
@@ -425,19 +1139,43 @@
       document.getElementById('windowLabel').textContent = String(windowRange.value);
       scheduleRefresh(true);
     });
-    ['timeupdate', 'seeked', 'play', 'pause'].forEach((ev) => {
-      player.addEventListener(ev, () => scheduleRefresh(ev !== 'timeupdate'));
+    document.getElementById('robustScale').addEventListener('change', () => scheduleRefresh(true));
+    document.getElementById('robustStrong').addEventListener('change', () => scheduleRefresh(true));
+    player.addEventListener('play', () => {
+      startVideoSyncLoop();
+      scheduleRefresh(true);
     });
+    player.addEventListener('pause', () => {
+      scheduleRefresh(true);
+    });
+    player.addEventListener('ended', () => {
+      stopVideoSyncLoop();
+      scheduleRefresh(true);
+    });
+    player.addEventListener('seeked', () => scheduleRefresh(true));
+    player.addEventListener('timeupdate', () => scheduleRefresh(false));
+    csvSeek.addEventListener('input', () => {
+      setCsvPlayhead(Number(csvSeek.value || 0), { force: true, fromUi: true });
+      csvTimeLabel.textContent = formatClock(csvPlayhead) + ' / ' + formatClock(csvDuration);
+    });
+    csvPlayBtn.addEventListener('click', () => toggleCsvPlayback());
 
     (async function boot() {
       const params = new URLSearchParams(location.search);
       const sid = params.get('session');
+      const saved = params.get('saved');
       try {
+        await refreshSavedSessions();
+        if (saved) {
+          document.getElementById('savedSessionSelect').value = saved;
+          document.getElementById('importSavedBtn').click();
+          return;
+        }
         if (sid) {
           await openExistingSession(sid);
           return;
         }
-        const list = await fetch('/api/sessions', { cache: 'no-store' }).then((r) => r.json());
+        const list = await fetch(apiUrl('/api/sessions'), { cache: 'no-store' }).then((r) => r.json());
         if (list && list.ok) {
           if (list.sessions && list.sessions.length === 1) {
             await openExistingSession(list.sessions[0].session_id);
