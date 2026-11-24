@@ -26,8 +26,9 @@
 
 - **데이터 무결성**: 로그별 샘플 누락 5~10%, 깨진 행 최대 약 0.1% → 바이너리 패킷 + CRC + 시퀀스 번호로 수신 즉시 판별
 - **절대값 검증**: 두 전류의 비율은 맞췄지만 어느 쪽이 절대적으로 정확한지는 미검증 → 클램프 미터로 독립 측정
-- **보안**: 팀 내부 전용이라 성능을 우선했음 → 열린 포트 최소화, SSH 키 인증, 방화벽 적용
-- 펌웨어 RTOS 전환, 리니어 센서 전원 강하 원인 특정 (아래 §11, §4.2)
+- **보안**: 웹은 nginx HTTPS + 로그인까지 적용했지만, 팀 내부 전용이라 성능을 우선했음 → 서비스가 `0.0.0.0`으로 떠 있는 내부 포트 차단(127.0.0.1 바인딩), SSH 키 인증, 방화벽 적용
+- **영상 정밀 동기**: RTP/RTCP 기반 ns 단위 매핑은 서버 측까지만 구현, Pi 보고 완성 필요 (§5.6)
+- 펌웨어 RTOS 전환, 리니어 센서 전원 강하 원인 특정 (아래 §12, §4.2)
 
 ## 저장소 구성
 
@@ -35,7 +36,7 @@
 |------|------|
 | `device/ECU_test/` | STM32CubeIDE 프로젝트 (메인 MCU 펌웨어) |
 | `device/raspberry pi 5/` | UART 수신 · 서버 전송 · 카메라 업로드 |
-| `server/` | 로깅(`udp_logger`), 실시간 대시보드(`udp_realtime`), 분석 서버(`analysis_server`) |
+| `server/` | 로깅(`udp_logger`), 실시간 대시보드·카메라 녹화(`udp_realtime`), 분석 서버(`analysis_server`), nginx·systemd 설정 → [§5](#5-서버-소프트웨어-아키텍처-server) |
 | `hardware/26_TELEPCB/` | 텔레메트리 보드 KiCad 회로도 · PCB · 거버 |
 
 아래부터는 다음 담당자를 위한 **설계 의도와 구현 구조** 문서입니다.
@@ -45,7 +46,7 @@
 ## 1. 한 줄 요약
 
 > 차량의 리니어·가속도·인버터/BMS·조향 데이터를 **MCU에서 동일 타임라인으로 통합 수집(100 Hz)** 하고, UART로 Raspberry Pi에 넘겨 Hotspot Wi‑Fi로 서버에 로깅·실시간 표시·카메라 녹화까지 연결한다.  
-> (현재 구현 보드는 STM32F407이며, **시간 동기화가 목적이라 Teensy 등 다른 MCU로 대체 가능** — 자세한 내용은 §5.2)
+> (현재 구현 보드는 STM32F407이며, **시간 동기화가 목적이라 Teensy 등 다른 MCU로 대체 가능** — 자세한 내용은 §6.2)
 
 ---
 
@@ -72,11 +73,11 @@ Wheel speed (옵션) ─USART2─┘         │                              �
 | **UART4** | MCU → Pi 단일 CSV 스트림 |
 | **Raspberry Pi 5** | 파싱, 배치 HTTP 전송, 카메라 프레임 업로드 |
 | **Hotspot** | 이동 환경 Wi‑Fi (아이폰 핫스팟 등으로 운용) |
-| **서버** | 집 노트북에서 구동. CSV 로깅, 실시간 대시보드, 카메라 수신/녹화. 공유기 포트포워딩 + SSH로 원격 관리 |
+| **서버** | 집 노트북에서 구동. CSV 로깅, 실시간 대시보드, 카메라 RTSP 녹화, 영상·센서 동기 분석. nginx HTTPS 경로 프록시 + 로그인, SSH로 원격 관리 (§5) |
 
 배치도 이미지: [`afa2026_system_layout.png`](./afa2026_system_layout.png)
 
-서버는 클라우드 전용 VM이 아니라 **집에 둔 노트북**을 서버로 쓰고, 공유기·방화벽·SSH를 열어 **밖에서도 본인 PC로 원격 접속·제어**하는 방식으로 운용했습니다. 자세한 절차는 [§8. 집 서버 원격 접속 (포트포워딩 + SSH)](#8-집-서버-원격-접속-포트포워딩--ssh) 참고.
+서버는 클라우드 전용 VM이 아니라 **집에 둔 노트북**을 서버로 쓰고, 공유기·방화벽·SSH를 열어 **밖에서도 본인 PC로 원격 접속·제어**하는 방식으로 운용했습니다. 자세한 절차는 [§9. 집 서버 원격 접속 (포트포워딩 + SSH)](#9-집-서버-원격-접속-포트포워딩--ssh) 참고.
 
 ---
 
@@ -247,6 +248,8 @@ can1, can2
 | `data_send_server.py` | 배치를 Logger `:8000/ingest` + (옵션) Realtime `:8011` 로 POST |
 | `camera.py` | JPEG 프레임 업로드 (운용 **15 fps**) |
 | `uart_test.py` | 보드레이트/배선 점검 |
+| `rtsp_publish.sh` | `rpicam-vid` H.264 → 서버 MediaMTX로 RTSP 송출 (**현재 녹화 경로**, 기본 1280×720 30 fps, hflip) |
+| `camera_sync_client.py` | 서버 동기 명령을 가져와 첫 프레임 RTP/시계 정보를 보고 (§5.6, 미완) |
 
 예시:
 
@@ -261,19 +264,266 @@ python3 data_send_server.py \
 
 ### 4.4 서버 쪽 (연동만 요약)
 
+자세한 구조와 동작 방식은 [§5. 서버 소프트웨어 아키텍처](#5-서버-소프트웨어-아키텍처-server)에 있습니다.
+
 | 서비스 | 포트 | 역할 |
 |--------|------|------|
-| `udp_logger` | 8000 | CSV 로깅 ingest |
+| `udp_logger` | 8000 | ingest 수신, CSV 로깅, 카메라 녹화 연동 |
 | `udp_realtime` | 8011 | 실시간 대시보드 |
-| camera | 8012 | 프레임 수신·녹화(ffmpeg) |
+| camera | 8012 | RTSP 녹화(ffmpeg `-c copy`) |
+| analysis | 8013 | 영상·센서 동기 분석 |
+| MediaMTX | 8554 | Pi RTSP 수신·중계 |
 
 실차에서 로그 유효 Hz가 50대까지 떨어지는 경우, CSV의 `stm_ms`는 대부분 10 ms를 유지하는 반면 wall-clock 초당 행 수만 줄어든 패턴이 많았습니다 → **MCU 샘플링보다 Hotspot/서버 업로드·카메라 부하**가 원인인 경우가 많습니다. 센서 100 Hz를 유지하려면 카메라 fps/해상도를 먼저 낮추는 편이 유리합니다.
 
 ---
 
-## 5. 핵심 설계 판단
+## 5. 서버 소프트웨어 아키텍처 (server)
 
-### 5.1 MCU 중앙 통합 — 핵심은 “시간 동기화”
+서버는 **FastAPI(uvicorn) 프로세스 4개 + MediaMTX(RTSP 중계) 1개**로 구성되고, 모두 집 노트북(Ubuntu) 한 대에서 돕니다.
+외부에는 **nginx가 HTTPS(443) 하나만** 노출하고, URL 경로로 각 서비스에 나눠 보냅니다. 영상만 RTSP(8554)로 따로 받습니다.
+
+### 5.1 구성 한눈에
+
+```text
+                                   ┌──────────────────────── 서버 노트북 ────────────────────────────┐
+[Pi] data_send_server.py ──HTTPS──▶ nginx :443 ── /          ─▶ udp_logger    :8000 ──▶ sensor_log_*.csv.gz
+     (POST /ingest, 20 Hz 배치)      (Let's Encrypt) │                         │  FORWARD_URL (최신값만)   session_sync_*.json
+                                                    ├─ /live/     ─▶ udp_realtime  :8011 ◀───┘
+                                                    ├─ /camera/   ─▶ camera_server :8012 ──ffmpeg -c copy──▶ camera-*.mp4
+[Pi] rtsp_publish.sh ──RTSP(H.264)──────────────────────────────▶ MediaMTX :8554 ──▲ (rtsp://127.0.0.1:8554/cam 를 pull)
+                                                    └─ /analysis/ ─▶ analysis      :8013 ──▶ CSV + 영상 동기 재생/분석
+[팀원 브라우저] ──HTTPS──▶ nginx  (로그인 쿠키 공유, 상단 네비로 4개 화면 이동)
+```
+
+| 서비스 | 코드 | 포트 | nginx 경로 | 역할 |
+|--------|------|------|-----------|------|
+| **로깅** | `udp_logger/app.py` | 8000 | `/` | 텔레메트리 수신(ingest), CSV 기록, 로깅 시작/종료, 카메라 녹화 연동, 영점(offset), 로그 파일 다운로드 |
+| **실시간** | `udp_realtime/realtime_server.py` | 8011 | `/live/` | 로거가 넘겨준 최신 샘플로 실시간 대시보드 표시 (UI 5 Hz) |
+| **카메라** | `udp_realtime/camera_server.py` | 8012 | `/camera/` | RTSP를 재인코딩 없이 MP4로 녹화, 미리보기, 녹화 파일 관리 |
+| **분석** | `analysis_server/analysis.py` | 8013 | `/analysis/` | 저장된 CSV와 영상을 같은 시간축으로 맞춰 재생, 이벤트·구간·KPI 분석 |
+| MediaMTX | `udp_realtime/mediamtx/mediamtx.yml` | 8554 | - | Pi가 보내는 RTSP 스트림 `cam` 경로를 받아 서버 내부로 중계 |
+
+### 5.2 디렉터리
+
+```
+server/
+├── start_servers.sh          # 4개 서비스 + MediaMTX 일괄 기동 (이미 떠 있으면 건너뜀)
+├── env.ingest.example        # 모든 서비스가 공유하는 설정 (실제 env.ingest는 커밋 금지)
+├── nginx-monolith.conf       # HTTPS 종단 + 경로 프록시 (/, /live/, /camera/, /analysis/)
+├── systemd/                  # afa-ingest / realtime / camera / analysis / mediamtx 서비스 유닛
+├── install_systemd.sh        # systemd 유닛 설치
+├── install_ffmpeg.sh / install_mediamtx.sh   # 바이너리 설치 (최초 1회)
+├── afa_auth.py               # 공통 로그인 미들웨어 (쿠키 세션, 공개 경로 예외)
+├── nav_config.py             # 상단 네비 URL (AFA_PUBLIC_HOST 기반)
+├── offset_shared.py          # 리니어/가속도 영점 공통 로직
+├── subsystem_status.py       # BMS / 인버터 상태 문자열 해석
+├── vehicle_speed.py          # 모터 RPM → 차속 (× 0.0222328)
+├── udp_logger/               # 로깅 서버
+│   ├── app.py
+│   ├── ingest_v2.py          # 배치 시퀀스 검증 · SQLite 저장소 (v2 스키마)
+│   ├── camera_sync_store.py  # Pi 카메라 동기 명령 큐 (SQLite)
+│   ├── sync_timeline.py      # RTP 타임스탬프 ↔ Pi 시계 변환
+│   ├── estimate_steering_angle.py  # 조향각이 멈춘 로그를 조향속도로 보정하는 오프라인 스크립트
+│   └── templates/            # 로깅 화면
+├── udp_realtime/             # 실시간 + 카메라 서버
+│   ├── realtime_server.py
+│   ├── camera_server.py
+│   ├── rtsp_rtcp_probe.py    # MediaMTX RTCP Sender Report 수집 (RTP ↔ NTP 매핑)
+│   └── mediamtx/mediamtx.yml
+└── analysis_server/          # 분석 서버
+    ├── analysis.py
+    ├── postprocess.py        # 파생 채널 · 이벤트 · 구간 · KPI
+    ├── signal_util.py        # 이동평균, 미분, 다운샘플 등
+    ├── vehicle_spec.py + vehicle.json   # 차량 제원 · 상태 판정 임계값
+    └── templates/
+```
+
+### 5.3 데이터 흐름 — 수신부터 CSV까지 (로깅 서버)
+
+**수신 경로**
+
+| 경로 | 용도 |
+|------|------|
+| `POST /ingest` | **기본 경로.** Pi가 20 Hz로 샘플 배치(JSON)를 보냄. 실시간 표시와 CSV 기록을 한 번에 처리 |
+| `POST /ingest/log` | 로그 전용 백필 경로. 실시간 화면은 갱신하지 않고, 로깅 중일 때만 CSV에 추가 |
+| UDP / TCP 소켓 | `ENABLE_UDP` / `ENABLE_TCP` (기본 켜짐). 초기 WebSocket → UDP/TCP 전환 때 쓰던 경로로, 호환용으로 남겨둠 |
+
+**처리 순서** (`/ingest` 한 번 호출 기준)
+
+1. **트래픽 집계**: 배치 안의 `stm_ms`로 수신 Hz를 계산합니다. 상태 화면에는 "서버 수신 Hz"와 "STM 샘플 Hz"가 따로 나옵니다.
+2. **보정** (`prepare_sensor_payload`)
+   - 장비별 **영점 offset** 적용 (리니어 mm, 가속도 g)
+   - 휠 펄스가 있으면 휠속도 계산
+   - 배선이 뒤바뀐 리니어 채널 보정 (`LINEAR_SWAP_FL_RR`)
+3. **CSV 기록** (로깅 ON일 때만)
+   - 샘플 1개를 1행(wide row)으로 펼칩니다. 컬럼은 `stm_ms`, 4륜 리니어, 가속도, 인버터·BMS·조향 등입니다.
+   - `stm_ms` 기준으로 **`LOG_TARGET_HZ`(기본 100 Hz)** 간격만 남깁니다. 수신이 200 Hz여도 CSV는 100 Hz가 됩니다. STM이 재부팅해 시계가 뒤로 가면 기준을 리셋합니다.
+   - 행은 asyncio 큐에 쌓고, 별도 writer task가 파일에 씁니다. 그래서 수신 핸들러가 디스크 I/O를 기다리지 않습니다.
+4. **실시간 전달**
+   - WebSocket `/ws/logs`로 로깅 화면에 브로드캐스트합니다.
+   - `FORWARD_URL`(실시간 서버 `/api/live/ingest`)로 POST합니다. 이 큐는 **최신 1건만 유지**합니다. 오래된 배치가 밀려 있다가 STM 전원이 꺼진 뒤에도 재생되는 문제를 막기 위해서입니다.
+
+### 5.4 로깅 세션과 카메라 녹화 연동
+
+로깅 화면에서 **시작**을 누르면 CSV와 영상이 **같은 세션 ID**로 묶여 시작되고, **종료**를 누르면 함께 끝납니다.
+
+```text
+[시작] POST /api/logging/start  {label: "다이나모"}
+  1. 연결된 장비가 없으면 409, 디스크 여유가 부족하면 507로 거부
+  2. 세션 ID 생성: <UTC yyyymmdd_HHMMSS_micro>_<라벨>
+  3. 카메라 서버에 녹화 시작 요청 → ffmpeg가 rtsp://127.0.0.1:8554/cam 을 -c copy 로 저장
+  4. Pi 카메라 동기 명령 등록 (camera_sync_store)
+  5. session_sync_<ID>.json 기록 (CSV/영상 파일명, 시작 시각, 카메라 상태)
+
+[종료] POST /api/logging/stop
+  1. 카메라를 먼저 정지 (CSV와 끝 시점을 최대한 맞추기 위해)
+  2. CSV flush → gzip 압축 (.csv.gz)
+  3. RTP/RTCP 정보로 영상 sidecar(.mp4.sync.json) 작성
+  4. session_sync_<ID>.json 갱신, 다운로드 토큰 발급
+```
+
+한 세션이 남기는 파일은 다음과 같습니다.
+
+| 파일 | 위치 | 내용 |
+|------|------|------|
+| `sensor_log_<ID>.csv.gz` | `udp_logger/logs/` | 100 Hz 센서 로그 |
+| `session_sync_<ID>.json` | `udp_logger/logs/`, `camera_recordings/` | 세션 메타데이터: 시작 시각, 파일명, 카메라 결과 |
+| `camera-<ID>.mp4` | `udp_realtime/camera_recordings/` | 원본 녹화 (H.264, 재인코딩 없음) |
+| `camera-<ID>.play.mp4` | 동일 | 브라우저 재생용 (faststart, 필요 시 좌우 반전) |
+| `camera-<ID>.mp4.sync.json` | 동일 | RTP 첫 프레임 ↔ RTCP NTP 시각 매핑 |
+
+**파일 관리**
+- 로깅 화면에서 달력으로 날짜별 로그를 보고 받을 수 있습니다. 하루치를 zip으로 받을 수도 있습니다(`/api/logging/files/day-zip`).
+- 서버가 시작될 때 비정상 종료로 남은 CSV를 찾아 복구합니다. gzip이 잘린 파일도 가능한 데까지 살립니다.
+- `LOG_MAX_DIR_BYTES`로 로그 폴더 용량 상한을, `LOG_MIN_FREE_BYTES`로 최소 디스크 여유를 지정합니다.
+
+**영점(offset) 보정**: 차가 평지에 정차한 상태에서 `POST /api/offset/calibrate`를 호출하면, 그 순간 값을 기준으로 리니어는 0 mm, 가속도 X/Y는 0 g, Z는 1 g이 되도록 offset을 저장합니다. 리니어만 또는 가속도만 따로 잡을 수도 있습니다.
+
+### 5.5 카메라 서버
+
+| 모드 | 경로 | 비고 |
+|------|------|------|
+| **RTSP (기본)** | Pi `rtsp_publish.sh` → MediaMTX :8554 → camera_server가 pull | `rpicam-vid` H.264 1280×720 30 fps를 그대로 저장. 서버 CPU 부담이 거의 없음 |
+| HTTP JPEG | Pi `camera.py` → `POST /api/camera/frame` | 초기 방식. 지금은 미리보기용 |
+| HUD 캡처 | 브라우저 대시보드 화면 → `POST /api/recording/frame` | 텔레메트리 HUD가 입혀진 화면 녹화 |
+
+- 녹화 중에는 `-c copy`로 받기만 합니다. 종료 후에 `+faststart` remux와 (`CAMERA_HFLIP=1`일 때) 좌우 반전을 적용해 `.play.mp4`를 만듭니다.
+- 녹화 예산은 `CAMERA_MAX_RECORDING_BYTES` / `CAMERA_MAX_RECORD_FRAMES` / `CAMERA_MIN_FREE_BYTES`로 제한합니다. 디스크가 차서 서버가 죽는 상황을 막기 위해서입니다.
+- 미리보기: `GET /api/camera/latest.jpg`, `GET /api/camera/stream.mjpg`
+- Pi와 서버를 잇는 구간은 핫스팟 품질에 민감합니다. 그래서 RTSP 전송은 기본값을 TCP(`RTSP_TRANSPORT=tcp`)로 두었습니다.
+
+### 5.6 센서 ↔ 영상 시간 동기화
+
+동기화는 이 프로젝트의 핵심 목표입니다. 영상은 다음 순서로 맞춥니다.
+
+| 단계 | 방법 | 상태 |
+|------|------|------|
+| ① 세션 묶기 | 로깅 시작과 녹화 시작을 같은 API 호출에서 처리하고 같은 세션 ID를 부여 | ✅ 운용 |
+| ② HUD 시계 OCR | 분석 서버가 영상 프레임 몇 장(0.5 s, 1 s, 2 s …)에서 화면 좌하단 시계를 `pytesseract`로 읽고, CSV에서 같은 시각을 찾아 offset 계산 | ✅ 운용 (`/autosync`) |
+| ③ 수동 미세조정 | 분석 화면에서 offset(초)를 직접 조정 | ✅ 운용 |
+| ④ RTP/RTCP 정밀 매핑 | ffmpeg가 받은 첫 RTP 타임스탬프와 MediaMTX RTCP Sender Report(RTP↔NTP)로 **영상 첫 프레임의 절대 시각**을 구하고, Pi `CLOCK_BOOTTIME`으로 변환해 STM 샘플과 ns 단위로 정렬 | ⚠️ 서버 측 구현 완료, Pi 측 미완 |
+
+④는 이렇게 동작하도록 설계했습니다.
+1. 로깅 시작 시 서버가 동기 명령을 큐에 넣습니다.
+2. Pi의 `camera_sync_client.py`가 `GET /api/sync/commands/next`로 명령을 가져갑니다. 이 요청은 장치 토큰(`CAMERA_SYNC_SERVER_TOKEN`)으로 인증합니다. 서버가 Pi로 접속하지 않고 Pi가 바깥으로 요청하는 구조라서 핫스팟 NAT 뒤에서도 동작합니다.
+3. Pi는 첫 인코딩 프레임의 RTP 타임스탬프와 자기 시계 값을 `POST /api/sync/report`로 보고합니다.
+4. 서버는 `sync_timeline.py`로 영상 PTS를 Pi 시계로 바꿉니다. RTP 32-bit 랩어라운드도 처리합니다. `GET /api/sync/timeline`이 이 변환 결과를 돌려줍니다.
+
+현재 저장된 sidecar는 `"mapping_ready": false`입니다. Pi 보고에 `reported_pi_realtime_ns`가 없어서 NTP와 Pi 시계 사이를 변환하지 못한 상태입니다. 그래서 실제 분석은 ①~③으로 했습니다. **다음 담당자는 Pi 카메라 코드에서 report를 완성하는 것부터 시작하면 됩니다.**
+
+### 5.7 실시간 서버
+
+- 로거가 넘겨준 배치를 받아 **최신 상태만** 메모리에 들고 있습니다. 화면 갱신은 `REALTIME_UI_HZ`(기본 5 Hz)로 제한합니다. 100 Hz를 그대로 브라우저에 보내면 폰 화면이 버티지 못하기 때문입니다.
+- STM 시계(`stm_ms`)가 일정 시간(`LIVE_STALE_SEC`) 동안 늘지 않으면 "데이터 끊김"으로 판단합니다. HTTP 요청이 계속 와도 STM이 꺼져 있을 수 있기 때문입니다. 시계가 1초 넘게 뒤로 가면 재부팅으로 봅니다.
+- BMS·인버터 상태(프리차지, 메인 컨택터, 인버터 모드 등)를 사람이 읽을 수 있는 문자열로 보여줍니다(`subsystem_status.py`).
+- `GET /api/live/snapshot`: 카메라 화면 HUD가 이 API로 현재 텔레메트리를 가져다 씁니다.
+
+### 5.8 분석 서버
+
+섀시·파워트레인 파트가 실제 주행 분석에 쓴 도구입니다.
+
+1. **세션 불러오기**
+   - 방법 1: 서버에 저장된 세션을 목록에서 골라 가져옵니다(`/api/saved-sessions` → `/api/import-saved/{id}`). `session_sync_*.json`을 읽어 CSV와 영상을 자동으로 짝짓습니다.
+   - 방법 2: CSV와 영상을 직접 업로드합니다. nginx 업로드 한도는 500 MB입니다.
+2. **동기 재생**: 영상을 재생하면 현재 시점 기준 **±15초 구간의 센서 차트**가 같이 움직입니다(`/window`, `/snapshot`).
+3. **후처리** (`postprocess.py`, 업로드할 때 1회 실행 후 결과를 캐시)
+   - 파생 채널: 종/횡 G, 서스펜션 기반 roll/pitch, 조향 기반 yaw 추정
+   - 이벤트 검출: `brake_peak`, `steer_peak`, `max_lat_g`, `drive_start`
+   - 구간 분할: 차속·브레이크압·조향·횡G·스로틀로 `stop / brake / corner / accel / cruise` 상태를 판정하고(FSM), 같은 상태가 이어지는 구간으로 나눕니다. 임계값은 `vehicle.json`의 `fsm`에 있습니다.
+   - KPI: 주행거리, 최고/평균 속도, 최대 횡G·감속G, roll/pitch 최대, 평균·최대 출력(kW), 코너 수와 평균 코너 시간
+   - 구간 비교(`/compare`): 두 구간의 지표를 나란히 비교
+4. **차량 제원**: 휠베이스, 트레드, 타이어 반경, 조향비, 질량 등을 `vehicle.json`에 둡니다. 화면에서 수정할 수 있습니다(`/api/vehicle`).
+
+### 5.9 인증과 공개 범위
+
+- `afa_auth.py`가 4개 서비스에 같은 로그인 미들웨어를 겁니다(`AFA_AUTH_ENABLED=1`). 쿠키 세션 방식이고, `AFA_AUTH_SESSION_HOURS`로 유효 시간을 정합니다.
+- 장비가 호출하는 경로는 로그인 예외입니다: `/ingest`, `/ingest/log`, `/api/live/ingest`, `/api/camera/frame`, `/api/sync/commands/next`, `/api/sync/report`. Pi가 로그인할 수 없기 때문입니다. 대신 sync API는 장치 토큰으로 보호합니다.
+- `/api/recording/*`는 루프백(127.0.0.1)에서 온 요청만 허용합니다. 로거가 카메라 서버를 내부에서 호출하는 용도입니다.
+- 모든 서비스가 같은 도메인 아래 경로로 나뉘어 있어서 쿠키 하나로 네 화면을 오갈 수 있습니다.
+
+### 5.10 설치와 실행
+
+```bash
+cd server
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r analysis_server/requirements.txt websockets   # fastapi, uvicorn, jinja2, pillow, pytesseract …
+sudo apt install tesseract-ocr                    # HUD 시계 OCR
+
+./install_ffmpeg.sh        # 최초 1회
+./install_mediamtx.sh      # 최초 1회
+cp env.ingest.example env.ingest   # AFA_PUBLIC_HOST, 로그인 계정, 토큰 등 수정
+
+./start_servers.sh         # 수동 기동 (로그: /tmp/*_server.log)
+# 또는 부팅 시 자동 기동
+sudo ./install_systemd.sh  # systemd/ 유닛 경로는 서버 위치에 맞게 수정
+```
+
+nginx: `nginx-monolith.conf`의 `your.domain.example`을 실제 도메인으로 바꾸고, certbot으로 인증서를 발급받은 뒤 적용합니다.
+
+Pi 쪽:
+
+```bash
+cd "device/raspberry pi 5"
+cp stm_ingest.env.example stm_ingest.env   # INGEST_URL=https://<도메인>/ingest, RTSP_PUBLISH_URL 등
+python3 data_send_server.py --port /dev/ttyAMA0 --baud 921600   # 센서
+./rtsp_publish.sh                                               # 카메라
+```
+
+### 5.11 주요 설정 (`env.ingest`)
+
+| 키 | 기본값 | 의미 |
+|----|--------|------|
+| `AFA_PUBLIC_HOST` | - | 공개 도메인. 네비 링크와 Pi 접속 주소의 기준 |
+| `LOG_TARGET_HZ` | 100 | CSV 저장 주파수 |
+| `LOG_DOWNLOAD_GZIP` | 1 | 종료 시 CSV를 gzip으로 압축 |
+| `LOG_DELETE_AFTER_DOWNLOAD` | 1 | 다운로드한 세션을 서버에서 삭제 (보관하려면 0) |
+| `LOG_MAX_DIR_BYTES` / `LOG_MIN_FREE_BYTES` | 512 MB / 64 MB | 로그 폴더 상한과 최소 디스크 여유 |
+| `FORWARD_URL` | `http://127.0.0.1:8011/api/live/ingest` | 로거 → 실시간 서버 |
+| `CAMERA_INTERNAL_URL` | `http://127.0.0.1:8012` | 로거 → 카메라 서버 (녹화 연동) |
+| `LINK_CAMERA_RECORDING` | 1 | 로깅 시작/종료에 카메라 녹화를 연동할지 |
+| `CAMERA_RECORD_MODE` | `rtsp` | `rtsp` 또는 HTTP JPEG |
+| `CAMERA_HFLIP` | 1 | 재생용 파일 좌우 반전 (카메라 장착 방향에 따라) |
+| `CAMERA_SYNC_SERVER_TOKEN` | - | Pi sync API용 장치 토큰 (길고 무작위인 값) |
+| `REALTIME_UI_HZ` | 5 | 실시간 화면 갱신 주기 |
+| `AFA_AUTH_ENABLED` / `_USERNAME` / `_PASSWORD` | - | 웹 로그인 |
+
+### 5.12 서버 운영에서 겪은 문제
+
+| 증상 | 원인 | 조치 |
+|------|------|------|
+| STM 전원을 꺼도 실시간 화면 값이 한동안 계속 바뀜 | 포워드 큐에 쌓인 옛 배치가 차례로 재생됨 | 큐를 "최신 1건 유지"로 변경 |
+| 로깅 Hz가 50대로 떨어짐 | Pi→서버 업로드 병목 (`stm_ms`는 10 ms 간격 정상) | 20 Hz 배치 전송, 카메라 해상도·fps를 먼저 낮춤 (§4.4) |
+| 실주행 영상이 좌우 반전됨 | 카메라 장착 방향 | Pi `--hflip` 기본 적용, 서버 재생본 반전 옵션 추가 |
+| HTTP JPEG 방식은 프레임마다 HTTP 요청과 서버 인코딩이 필요함 | 무선 대역과 서버 CPU를 함께 소모 | Pi에서 H.264로 인코딩해 RTSP로 보내고, 서버는 `-c copy`로 저장만 하도록 전환 |
+| 이전 세션이 정리되지 않아 다음 로깅이 시작되지 않음 | Pi sync report를 기다리는 pending 명령이 남음 | 종료할 때 pending 명령을 폐기하고 report를 기다리지 않음 |
+| 일부 로그에서 조향각이 한 값에 멈춤 | LWS 조향각 값 고정 (원인 미확정) | `estimate_steering_angle.py`로 조향속도·횡G·리니어 roll을 써서 사후 추정 (원본은 `.bak_steer*`로 보관) |
+
+---
+
+## 6. 핵심 설계 판단
+
+### 6.1 MCU 중앙 통합 — 핵심은 “시간 동기화”
 
 이 프로젝트에서 MCU(현재 구현은 STM32F407)를 둔 **가장 큰 이유**는 브랜드가 아니라 **시간 동기화**입니다.
 
@@ -287,7 +537,7 @@ python3 data_send_server.py \
 | **장점** | 단일 UART 스트림, 디버그·확장 용이, 실차 EMI 환경에서도 샘플 주기를 MCU가 책임 |
 | **리스크** | MCU/UART가 단일 장애점, CSV가 길면 UART·무선 부하 증가 |
 
-### 5.2 STM32를 꼭 고집할 필요는 없음
+### 6.2 STM32를 꼭 고집할 필요는 없음
 
 **“STM이어야만 한다”는 제약은 없습니다.**  
 필요한 것은 대략 다음을 만족하는 **실시간 MCU**면 됩니다.
@@ -309,22 +559,22 @@ python3 data_send_server.py \
 지금 저장소 펌웨어는 **STM32F407 Discovery/Cube 기반**으로 작성된 **한 가지 구현**입니다.  
 구조(센서·CAN → MCU 타임라인 → 시리얼 → Pi → 서버)만 유지하면 **Teensy 등 다른 MCU로 포팅해도 설계 의도는 그대로**입니다.
 
-### 5.3 대안이었던 분산 전송
+### 6.3 대안이었던 분산 전송
 
 - 센서·카메라를 각자 올리거나 주기만 다르게 하는 방식
 - 무선 부하는 나눌 수 있으나 **시각 동기·배선·프로토콜 복잡도**가 커짐 → 본 프로젝트 목표(동기 로깅)와는 덜 맞음
 
-### 5.4 샘플링 100 Hz / UART 921600
+### 6.4 샘플링 100 Hz / UART 921600
 
 - 200 Hz → 100 Hz: 루프·UART·업로드 여유
 - 460800 ↔ 921600: 용량 vs EMI/배선 안정성 트레이드오프. 근거리면 921600 가능
 
-### 5.5 리니어 캘리브레이션을 소프트웨어로
+### 6.5 리니어 캘리브레이션을 소프트웨어로
 
 - 채널마다 풀전압이 다름 (하드웨어·케이블·장착)
 - 코드에서 채널별 `vmax`로 100 mm 맞춤 — **배선 불량(신호/파워 교차)은 캘리로 고칠 수 없음**
 
-### 5.6 텔레메트리 전송 방식의 다른 선택지
+### 6.6 텔레메트리 전송 방식의 다른 선택지
 
 계측에서 “차 → 기록 PC/서버”로 데이터를 넘기는 방법은 팀이 제각각이라, **이 저장소 방식(MCU + Pi + Hotspot Wi‑Fi)이 유일한 정답은 아닙니다.**  
 크게 보면 아래 세 갈래로 나뉩니다.
@@ -371,7 +621,7 @@ python3 data_send_server.py \
 
 ---
 
-## 6. 디버그 체크리스트
+## 7. 디버그 체크리스트
 
 ### STM Live Expressions 예
 
@@ -397,7 +647,7 @@ main_loop_count
 
 ---
 
-## 7. 빌드·플래시·실행
+## 8. 빌드·플래시·실행
 
 ### STM32
 
@@ -416,17 +666,22 @@ python3 data_send_server.py --port /dev/ttyAMA0 --baud 921600
 카메라:
 
 ```bash
-python3 camera.py --fps 15
+python3 camera.py --fps 15     # HTTP JPEG (초기 방식, 미리보기용)
+./rtsp_publish.sh               # RTSP 송출 (현재 녹화 경로)
 ```
+
+### 서버
+
+[§5.10 설치와 실행](#510-설치와-실행) 참고.
 
 ---
 
-## 8. 집 서버 원격 접속 (포트포워딩 + SSH)
+## 9. 집 서버 원격 접속 (포트포워딩 + SSH)
 
 계측 서버(`udp_logger` / `udp_realtime` / camera 등)는 **집 PC(노트북)** 에서 돌리고, 현장(차·Pi)은 Hotspot Wi‑Fi로 그 서버에 데이터를 올립니다.  
 서버 노트북은 항상 옆에 둘 수 없으므로, **집 공유기 포트포워딩 + OS 방화벽에서 SSH(22) 허용**해 두고, 밖에서는 **공인 IP 또는 DDNS 도메인**으로 SSH 접속해 노트북을 원격 제어했습니다.
 
-### 8.1 전체 흐름
+### 9.1 전체 흐름
 
 ```text
 [밖: 본인 노트북 / 폰]
@@ -445,7 +700,7 @@ python3 camera.py --fps 15
 
 즉 **“서버 = 집 노트북”** 이고, **“원격 = SSH로 그 노트북에 들어가 조작”** 입니다.
 
-### 8.2 서버 노트북 준비 (SSH 서버)
+### 9.2 서버 노트북 준비 (SSH 서버)
 
 1. OS에 **OpenSSH Server** 설치·활성화  
    - Linux: `openssh-server` 설치 후 `sshd` 기동  
@@ -464,7 +719,7 @@ ssh -p <포트> <username>@<공인IP또는도메인>
 
 접속되면 집 노트북 셸이 열리고, 여기서 `server/` 서비스 기동·재시작·로그 확인 등 **원격으로 서버를 조종**할 수 있습니다.
 
-### 8.3 OS 방화벽 — 22번(SSH) 허용
+### 9.3 OS 방화벽 — 22번(SSH) 허용
 
 노트북 방화벽에서 **인바운드 TCP 22** 를 허용해야 공유기까지 들어온 SSH가 PC에 도달합니다.
 
@@ -474,7 +729,7 @@ ssh -p <포트> <username>@<공인IP또는도메인>
 계측 HTTP도 밖에서도 열려야 하면 동일하게 **8000 / 8011 / 8012** 등을 허용합니다.  
 (현장 Pi → 서버만 쓰고, 본인은 SSH만 쓸 계획이면 HTTP는 LAN 전용으로 두고 SSH 터널로만 볼 수도 있습니다.)
 
-### 8.4 집 공유기 포트포워딩
+### 9.4 집 공유기 포트포워딩
 
 공유기 관리 페이지(보통 `192.168.0.1` / `192.168.1.1`)에서:
 
@@ -497,7 +752,7 @@ ssh -p <포트> <username>@<공인IP또는도메인>
 Pi의 `--url` / `--realtime-url` 에는 **공유기 공인 IP 또는 DDNS 도메인**을 넣습니다.  
 예: `http://<your-domain>.ddns.net:8000/ingest`
 
-### 8.5 공인 IP vs 도메인 (DDNS)
+### 9.5 공인 IP vs 도메인 (DDNS)
 
 - **고정 공인 IP**면 IP로 바로 `ssh user@x.x.x.x`
 - 가정용 회선은 IP가 자주 바뀌므로 **DDNS 도메인**(공유기 내장 DDNS 또는 외부 DDNS)을 묶어 두는 편이 편함  
@@ -505,7 +760,7 @@ Pi의 `--url` / `--realtime-url` 에는 **공유기 공인 IP 또는 DDNS 도메
 
 Pi/노트북이 Hotspot에 있어도, **목적지가 집 공인 IP/도메인**이면 인터넷 경유로 집 서버에 도달합니다.
 
-### 8.6 실제로 한 일 (운용)
+### 9.6 실제로 한 일 (운용)
 
 1. 집 노트북에 서버 스택 실행 (`start_servers.sh` 등)
 2. 공유기에서 **22 → 노트북**, 필요 시 **8000/8011/8012** 포워딩
@@ -515,7 +770,7 @@ Pi/노트북이 Hotspot에 있어도, **목적지가 집 공인 IP/도메인**�
 
 이 구성으로 **서버 노트북을 집에 둔 채 원격으로 제어**하며 계측 파이프라인을 유지했습니다.
 
-### 8.7 보안 주의 (필수)
+### 9.7 보안 주의 (필수)
 
 - SSH를 인터넷에 열면 **무차별 대입 공격** 대상이 됩니다.
   - 가능하면 **키 인증만** 허용, 비밀번호 로그인 비활성
@@ -527,16 +782,18 @@ Pi/노트북이 Hotspot에 있어도, **목적지가 집 공인 IP/도메인**�
 
 ---
 
-## 9. 라이선스 / 주의
+## 10. 라이선스 / 주의
 
 - STM HAL/CMSIS는 ST 라이선스 조건을 따릅니다.
 - `.env` / 실제 ingest URL·자격 증명은 커밋하지 마세요. `*.env.example`만 사용하세요.
 - `Debug/` 빌드 산출물, `__pycache__`, 셸 히스토리는 저장소에서 제외하는 것을 권장합니다.
-- 집 서버 SSH/포트포워딩은 편리하지만 노출면이 생기므로 [§8.7](#87-보안-주의-필수)을 지키세요.
+- 집 서버 SSH/포트포워딩은 편리하지만 노출면이 생기므로 [§9.7](#97-보안-주의-필수)을 지키세요.
 
 ---
 
-## 10. 변경 이력 (device 관점 요약)
+## 11. 변경 이력
+
+device:
 
 - STM32 슈퍼루프 + CAN1/2 파싱 + UART CSV 파이프라인
 - 리니어 ADC  Averaging/EMA + 채널별 vmax 캘리
@@ -548,7 +805,18 @@ Pi/노트북이 Hotspot에 있어도, **목적지가 집 공인 IP/도메인**�
 - MCU 채택 이유(시간 동기화) 명시, STM 외 Teensy 등 대체 가능 안내
 - 텔레메트리 대안: 상용 로거 / Wi‑Fi·Hotspot / EBYTE E220-900T22S(UART LoRa) 비교 정리
 
-## 11. 아쉬운점
+서버:
+
+- FastAPI 로깅 / 실시간 / 카메라 / 분석 4개 서비스로 분리, `start_servers.sh`와 systemd로 기동
+- nginx HTTPS(Let's Encrypt) 단일 도메인 경로 프록시, 공통 로그인(`afa_auth.py`)
+- 로깅 시작/종료에 카메라 녹화 연동, 세션 ID로 CSV·영상·sync JSON 묶음
+- 카메라를 HTTP JPEG에서 RTSP(MediaMTX) + ffmpeg `-c copy` 녹화로 전환
+- CSV를 `stm_ms` 기준 100 Hz로 다운샘플, gzip 압축, 비정상 종료 로그 복구
+- 실시간 포워드 큐를 최신 1건 유지로 변경 (STM 전원 차단 후 과거 값이 재생되던 문제)
+- 분석 서버: HUD 시계 OCR 자동 동기, ±15초 차트, 이벤트·주행 상태 구간·KPI·구간 비교
+- RTP/RTCP 기반 영상 정밀 동기의 서버 측 구현 (Pi 측 미완)
+
+## 12. 아쉬운점
 RTOS 미적용 — 시간 부족으로 남은 아쉬운 점
 현재 펌웨어는 RTOS 없이 메인 루프 + DMA/인터럽트 구조입니다. CAN 수신, UART 송신 등 타이밍이 중요한 부분은 이미 DMA·인터럽트로 처리되고 있어서, RTOS가 없다고 해서 당장 샘플링 타이밍이 깨지는 구조는 아닙니다.
 다만 기능이 하나씩 늘어나면서 메인 루프 안에 로직이 계속 쌓이는 구조가 됐고, 시간이 있었다면 FreeRTOS 등으로 태스크를 나눠서(센서 샘플링 태스크, CAN 파싱 태스크, UART 송신 태스크 등) 더 깔끔하게 모듈화하고 싶었던 부분입니다. 단순히 시간이 부족해서 모듈화 리팩터링까지 못 간 것이 아쉽습니다.
