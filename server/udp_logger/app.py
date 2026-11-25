@@ -62,6 +62,7 @@ from afa_auth import install_auth
 from nav_config import nav_context
 from ingest_v2 import IngestV2Store, V2ValidationError, validate_v2_payload
 from sync_timeline import rtp_to_ntp_ns, video_pts_to_pi_mono_ns
+from log_downsample import downsample_rows
 from camera_sync_store import (
     CameraSyncStore,
     PendingCommandExists,
@@ -140,6 +141,11 @@ LOG_MIN_FREE_BYTES = int(os.getenv("LOG_MIN_FREE_BYTES", str(64 * 1024 * 1024)))
 # CSV 기록 목표 Hz (수신이 200Hz여도 stm_ms 기준으로 이 간격만 저장)
 LOG_TARGET_HZ = max(1.0, float(os.getenv("LOG_TARGET_HZ", "100")))
 LOG_MIN_INTERVAL_MS = 1000.0 / LOG_TARGET_HZ
+# 샘플 지터 허용치(ms). 간격이 (목표 간격 - 허용치) 이상이면 저장한다.
+# 허용치가 0이면 1 ms 늦은 샘플 다음의 정상 샘플(간격 9 ms)이 버려진다.
+LOG_JITTER_TOLERANCE_MS = max(
+    0.0, float(os.getenv("LOG_JITTER_TOLERANCE_MS", str(0.2 * LOG_MIN_INTERVAL_MS)))
+)
 CAMERA_INTERNAL_URL = os.getenv("CAMERA_INTERNAL_URL", "http://127.0.0.1:8012").strip().rstrip("/")
 LINK_CAMERA_RECORDING = os.getenv("LINK_CAMERA_RECORDING", "1").strip().lower() in {"1", "true", "yes", "on"}
 CAMERA_API_TIMEOUT_SEC = float(os.getenv("CAMERA_API_TIMEOUT_SEC", "3.0"))
@@ -3313,21 +3319,13 @@ def _downsample_log_rows(
     if min_interval <= 0:
         return rows
 
-    last = log_last_stm_ms_by_device.get(device_key)
-    kept: list[dict[str, Any]] = []
-    for row in rows:
-        stamp = _as_float(row.get("stm_ms"))
-        if stamp is None:
-            # 시계 없으면 그대로 둠 (유실보다 중복이 나음)
-            kept.append(row)
-            continue
-        # STM 재부팅/랩: 시계가 크게 뒤로 가면 워터마크 리셋
-        if last is not None and stamp + 1000.0 < float(last):
-            last = None
-        if last is not None and (stamp - float(last)) < min_interval:
-            continue
-        kept.append(row)
-        last = stamp
+    kept, last = downsample_rows(
+        rows,
+        log_last_stm_ms_by_device.get(device_key),
+        min_interval_ms=min_interval,
+        jitter_tolerance_ms=LOG_JITTER_TOLERANCE_MS,
+        get_stamp=lambda row: _as_float(row.get("stm_ms")),
+    )
     if last is not None:
         log_last_stm_ms_by_device[device_key] = float(last)
     return kept

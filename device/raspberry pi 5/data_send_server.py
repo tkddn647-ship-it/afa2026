@@ -66,6 +66,11 @@ SCRIPT_VERSION = "2026-07-16-can"
 STATUS_INTERVAL_S = 2.0
 UART_OPEN_RETRY_S = 5.0
 UART_RECONNECT_S = 3.0
+# 전송 실패 시 보관할 최대 샘플 수 (100 Hz 기준 60초). 넘으면 오래된 것부터 버린다.
+PENDING_MAX_SAMPLES = int(os.getenv("PENDING_MAX_SAMPLES", "6000"))
+# POST 한 번에 실을 최대 샘플 수와, 50 ms 주기 한 번에 시도할 최대 POST 수.
+POST_MAX_SAMPLES = int(os.getenv("POST_MAX_SAMPLES", "200"))
+POSTS_PER_CALL_MAX = int(os.getenv("POSTS_PER_CALL_MAX", "3"))
 
 
 def sample_to_server_dict(sample: dict[str, Any]) -> dict[str, Any]:
@@ -226,6 +231,11 @@ class BatchSender:
         self.realtime_failed_batches = 0
         self.last_error = ""
         self.last_http_status = 0
+        # 전송 실패한 샘플을 버리지 않고 다음 주기에 다시 보낸다 (오래된 것부터).
+        self.pending: list[dict[str, Any]] = []
+        self.pending_max_samples = PENDING_MAX_SAMPLES
+        self.dropped_samples = 0
+        self.resent_samples = 0
 
     def _post_json(self, url: str, body: dict[str, Any]) -> None:
         response = self.session.post(
@@ -238,23 +248,48 @@ class BatchSender:
         response.raise_for_status()
 
     def send(self, batch: list[dict[str, Any]]) -> bool:
-        if not batch:
+        if not batch and not self.pending:
             return True
 
-        body = build_ingest_payload(batch, self.device)
-        try:
-            self._post_json(self.url, body)
-        except requests.RequestException as exc:
-            self.failed_batches += 1
-            self.last_error = str(exc)
-            print(f"[error] ingest 실패 ({self.url}): {exc}")
-            return False
+        backlog = len(self.pending)
+        self.pending.extend(batch)
+        overflow = len(self.pending) - self.pending_max_samples
+        if overflow > 0:
+            # 장시간 단절: 가장 오래된 샘플부터 포기하고 개수를 남긴다.
+            del self.pending[:overflow]
+            self.dropped_samples += overflow
+            backlog = max(0, backlog - overflow)
 
-        self.sent_batches += 1
-        self.sent_samples += len(batch)
-        self.last_error = ""
+        # 밀린 샘플은 순서대로, 한 번에 POST_MAX_SAMPLES 개씩, 호출당 최대 몇 번만 보낸다.
+        for _ in range(POSTS_PER_CALL_MAX):
+            if not self.pending:
+                break
+            chunk = self.pending[:POST_MAX_SAMPLES]
+            try:
+                self._post_json(self.url, build_ingest_payload(chunk, self.device))
+            except requests.RequestException as exc:
+                self.failed_batches += 1
+                self.last_error = str(exc)
+                print(
+                    f"[error] ingest 실패 ({self.url}): {exc} "
+                    f"(대기 {len(self.pending)}샘플, 다음 주기에 재전송)"
+                )
+                return False
+            del self.pending[: len(chunk)]
+            self.sent_batches += 1
+            self.sent_samples += len(chunk)
+            resent = min(backlog, len(chunk))
+            self.resent_samples += resent
+            backlog -= resent
+            self.last_error = ""
 
-        if self.realtime_url:
+        if self.pending:
+            # 아직 밀린 것이 남았다. 다음 주기에 이어서 보낸다.
+            return True
+
+        # 실시간 화면에는 방금 받은 배치만 보낸다 (밀린 과거 데이터는 보내지 않음).
+        if self.realtime_url and batch:
+            body = build_ingest_payload(batch, self.device)
             try:
                 self._post_json(self.realtime_url, body)
                 self.realtime_sent_batches += 1
@@ -295,7 +330,9 @@ def print_runtime_status(sender: BatchSender, baud: int) -> None:
     print(
         f"[status] uart_lines={rx['raw_lines']} parsed={rx['parsed_samples']} "
         f"parse_err={rx['parse_errors']} sent_batches={sender.sent_batches} "
-        f"sent_samples={sender.sent_samples} ingest_fail={sender.failed_batches}"
+        f"sent_samples={sender.sent_samples} ingest_fail={sender.failed_batches} "
+        f"pending={len(sender.pending)} resent={sender.resent_samples} "
+        f"dropped={sender.dropped_samples}"
         f"{rt_part}"
     )
     if rx["raw_lines"] == 0:
