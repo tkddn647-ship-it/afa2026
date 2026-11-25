@@ -1,0 +1,92 @@
+[
+ {
+  "session": "20260731_031858_070588",
+  "offset_sec_hint": 2.48,
+  "method": "pot",
+  "video_to_log_lag_s": 2.01,
+  "server_ts_latency_p50_ms": 184,
+  "server_ts_latency_p95_ms": 846,
+  "stm_clock_scale": 0.99172
+ },
+ {
+  "session": "20260731_034542_245924",
+  "offset_sec_hint": 1.72,
+  "method": "pot",
+  "video_to_log_lag_s": 2.02,
+  "server_ts_latency_p50_ms": 273,
+  "server_ts_latency_p95_ms": 2022,
+  "stm_clock_scale": 0.99181
+ },
+ {
+  "session": "20260731_101840_574049",
+  "offset_sec_hint": 2.82,
+  "method": "pot",
+  "video_to_log_lag_s": 1.89,
+  "server_ts_latency_p50_ms": 128,
+  "server_ts_latency_p95_ms": 484,
+  "stm_clock_scale": 0.99385
+ },
+ {
+  "session": "20260731_103420_339055",
+  "offset_sec_hint": 0.99,
+  "method": "pot, 3 windows",
+  "video_to_log_lag_s": 1.28,
+  "server_ts_latency_p50_ms": 111,
+  "server_ts_latency_p95_ms": 534,
+  "stm_clock_scale": 0.99319
+ },
+ {
+  "session": "20260731_104300_866808",
+  "offset_sec_hint": 0.3,
+  "method": "pot, 2 windows",
+  "video_to_log_lag_s": 0.57,
+  "server_ts_latency_p50_ms": 125,
+  "server_ts_latency_p95_ms": 446,
+  "stm_clock_scale": 0.99279
+ },
+ {
+  "session": "20260811_022758_150378",
+  "offset_sec_hint": 0.29,
+  "method": "yaw, whole-session",
+  "video_to_log_lag_s": 0.94,
+  "server_ts_latency_p50_ms": 105,
+  "server_ts_latency_p95_ms": 216,
+  "stm_clock_scale": 0.9935
+ },
+ {
+  "session": "20260811_025402_438882",
+  "offset_sec_hint": 1.11,
+  "method": "yaw",
+  "video_to_log_lag_s": 0.8,
+  "server_ts_latency_p50_ms": 96,
+  "server_ts_latency_p95_ms": 220,
+  "stm_clock_scale": 0.99311
+ },
+ {
+  "session": "20260811_073314_333336",
+  "offset_sec_hint": 1.81,
+  "method": "yaw, whole-session",
+  "video_to_log_lag_s": 1.56,
+  "server_ts_latency_p50_ms": 84,
+  "server_ts_latency_p95_ms": 224,
+  "stm_clock_scale": 0.99357
+ },
+ {
+  "session": "20260811_084517_257245",
+  "offset_sec_hint": 0.59,
+  "method": "yaw",
+  "video_to_log_lag_s": 1.36,
+  "server_ts_latency_p50_ms": 91,
+  "server_ts_latency_p95_ms": 229,
+  "stm_clock_scale": 0.99399
+ },
+ {
+  "session": "20260813_001309_427966",
+  "offset_sec_hint": 1.27,
+  "method": "yaw",
+  "video_to_log_lag_s": 1.67,
+  "server_ts_latency_p50_ms": 160,
+  "server_ts_latency_p95_ms": 338,
+  "stm_clock_scale": 0.99377
+ }
+]
