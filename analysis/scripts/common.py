@@ -1,4 +1,5 @@
 import pandas as pd, numpy as np, json, os
+# Data folder holding udp_logger/logs and udp_realtime/camera_recordings (set AFA_DATA to override)
 ROOT = os.environ.get('AFA_DATA', os.path.expanduser('~/mnt/afa_data'))
 SUS = ['FR', 'FL', 'RR', 'RL']
 def load_sensor(sid):
