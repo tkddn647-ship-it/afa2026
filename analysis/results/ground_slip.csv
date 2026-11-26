@@ -1,0 +1,6 @@
+state,frames,slip_median_pct,slip_p25_pct,slip_p75_pct
+coasting,126,0.0,-9.9,12.2
+drive 50-100 Nm,545,27.6,7.4,64.4
+drive 100-150 Nm,67,46.7,29.6,97.6
+drive >150 Nm,21,118.7,101.6,135.5
+regen / braking (torque < -5 Nm or ax < -0.3 g),238,-14.0,-24.8,-3.4

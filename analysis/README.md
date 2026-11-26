@@ -182,6 +182,21 @@ BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 
 
 네 세션 합계로 BMS 적분은 감소량의 0.87배, 인버터 적분은 1.10배다. BMS의 용량 카운터는 BMS 자신의 전류 센서로 세는 값이라 독립 기준이 아니고, 해상도도 0.1Ah다. 그래서 어느 센서가 맞는지는 여전히 판정할 수 없다. 다만 BMS가 센 방전량은 두 적분 값 사이에 있다.
 
+### 기록된 값의 비트 오류 걸러내기
+
+7/28~7/31 로그의 남은 행에도 비트 오류로 틀린 값이 섞여 있다(2절). 한 샘플만 튀고 앞뒤 샘플은 서로 같은 값을 찾아 지웠다(`scrub.py`, `scrub_apply.py`).
+
+- **물리적으로 불가능한 채널만 지운다:** 포텐셔미터(펌웨어 EMA는 한 샘플만 튀었다 돌아올 수 없다), 온도·전압(느린 신호), CAN 구동값(프레임을 받을 때까지 값이 유지된다)이 대상이다. 가속도계는 실제 충격일 수 있어 남긴다. 두 행 이상 이어진 손상은 물리 한계(예: 모터 7000rpm, 모터 온도 150°C)로 거른다.
+- **비트 오류를 잡는지 확인했다:** 느린 채널에서 찾은 튐의 23~25%가 정확히 1·2·4·8×10ᵏ 크기였다. 우연히 그 크기가 될 확률은 약 1%다. 세션별 튐 비율과 2절의 비트 오류율은 순위상관 0.76(28개 세션)이다.
+- **결과:** 30개 세션 117만 행에서 값 21,134개를 지웠다(세션별 1000행당 0~56개). 예를 들어 7/31 03:45의 FR 최대값은 5002 → 34mm, 모터 회전수 최대값은 329,886 → 3,559rpm이 됐다. 지운 위치는 `clean/<세션>_scrub_mask.csv.gz`에 남긴다.
+- **남는 것:** 그럴듯한 범위 안에서 작은 자리가 바뀐 값은 찾을 수 없다.
+
+### 노면 흐름으로 슬립 재기: 이 영상으로는 안 됨
+
+8/13 전방 영상에서 노면의 특징점을 프레임 사이로 추적해, 평평한 바닥 가정으로 지면 대비 전진 거리를 쟀다(`track_ground.py`, `ground_slip.py`). 타행 구간에서 차속과 맞춘 카메라 높이는 1.74m로, 콘 지도의 1.76m와 맞았다. 둘 다 차속을 기준으로 해서 독립 검증은 아니고, 기하 모델이 일관된다는 확인이다.
+
+슬립은 잴 수 없었다. 쓸 만한 프레임이 속도에 따라 9~36%뿐이었고(15fps, 854×480, 모션 블러), 타행 중에도 프레임별 오차가 ±10~15%였다. 토크가 5~50Nm로 거의 없는 구간에서도 겉보기 슬립이 11~39%로 나와, 가속에 따른 측정 편향(피치 변화 등)이 실제 슬립보다 컸다.
+
 ## 7. 주행 성능
 
 | 항목 | 값 |
@@ -211,7 +226,7 @@ BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 
 | 카메라 센서 | `camsensor.py`, `steer_resp.py`, `yaw_gain2.py` | 카메라 요레이트 교정, 조향 응답, 언더스티어 모델 |
 | 코스·랩 | `laps.py`, `course_all.py`, `course_detail.py` | 8/13 초기 궤적(카메라 교정용), 전 세션 랩 검출, 코스·코너 분석 |
 | 콘 지도 | `cones_detect.py`, `cone_prep.py`, `cone_calib.py`, `cone_slam.py`, `cone_corners.py` | 콘 검출, 랩별 궤적과 콘 추적, 카메라 높이·지평선 교정, 랩 정렬과 지도, 코너별 트랙 폭 |
-| 추가 확인 | `ema_inverse.py`, `ema_inverse2.py`, `bms_amphours.py` | 펌웨어 필터 역산과 영상 대조, BMS 남은 용량과 전류 적분 |
+| 추가 확인 | `ema_inverse.py`, `ema_inverse2.py`, `bms_amphours.py`, `scrub.py`, `scrub_apply.py`, `track_ground.py`, `ground_slip.py` | 펌웨어 필터 역산과 영상 대조, BMS 남은 용량과 전류 적분, 비트 오류 값 정제, 노면 흐름 |
 | 그림 | `make_figs.py`, `make_fig_loss.py`, `make_frame_figs.py`, `make_fig_cone_map.py`, `make_fig_uart.py` | 보고서 그림 |
 
 ## 실행
@@ -231,7 +246,8 @@ V=$AFA_DATA/udp_realtime/camera_recordings/camera-20260813_001309_427966.mp4
 python3 cones_detect.py $V out/cones_0813.csv          # 콘 검출 (긴 영상은 시작·끝 초를 인자로 나눠 실행)
 python3 cone_prep.py && python3 cone_calib.py && python3 cone_slam.py && python3 cone_corners.py && python3 make_fig_cone_map.py
 python3 uart_integrity.py $AFA_DATA/udp_logger/logs && python3 uart_by_state.py $AFA_DATA/udp_logger/logs && python3 uart_pbit.py $AFA_DATA/udp_logger/logs
-python3 ema_inverse.py && python3 ema_inverse2.py && python3 bms_amphours.py
+python3 ema_inverse.py && python3 ema_inverse2.py && python3 bms_amphours.py && python3 scrub.py && python3 scrub_apply.py
+python3 track_ground.py $V out/ground_0813_a.csv 150 330   # b: 330 440, c: 440 545, 이어서 python3 ground_slip.py
 python3 uart_sim.py "<repo>/device/raspberry pi 5" $AFA_DATA/udp_logger/logs/sensor_log_20260731_034542_245924.csv.gz out/uart_sim.csv && python3 make_fig_uart.py
 ```
 
@@ -240,7 +256,7 @@ python3 uart_sim.py "<repo>/device/raspberry pi 5" $AFA_DATA/udp_logger/logs/sen
 ## 한계
 
 - 차와 장비를 더 다룰 수 없어, 수정한 코드는 실차에 적용하지 못했고 재현 테스트로만 검증했다. 펌웨어 CRC 코드는 호스트 gcc로 문법과 CRC 계산만 확인했다.
-- 7/28~7/31 로그의 기록된 행에도 비트 오류로 틀린 값이 섞여 있다(모의 추정으로 세션에 따라 약 1~13%, 실제 비율은 오류가 몰리는 정도에 따라 다름). 앞 분석은 중앙값·평활과 물리 범위 필터를 써서 영향이 작다고 보지만, 이 기간의 단일 샘플 값은 믿기 어렵다.
+- 7/28~7/31 로그의 기록된 행에도 비트 오류로 틀린 값이 섞여 있다. 튀는 값은 `scrub_apply.py`로 걸렀지만, 범위 안의 작은 오류는 남는다(모의 추정으로 세션에 따라 약 1~13%, 실제 비율은 오류가 몰리는 정도에 따라 다름). 앞 분석은 중앙값·평활과 물리 범위 필터를 써서 영향이 작다고 보지만, 이 기간의 단일 샘플 값은 믿기 어렵다.
 - 영상 해상도 때문에 영상–로그 잔차가 약 2.4mm 남고, 7Hz 이상 움직임은 볼 수 없다. 픽셀→mm 환산은 로그에 맞춰 구해서 절대 크기의 독립 검증은 아니다.
 - 펌웨어가 변위에 지수이동평균(차단 약 2.3Hz)을 걸었다. 역산으로 되돌릴 수는 있지만 2Hz 이상은 잡음과 움직임의 크기가 비슷해서 댐퍼 거동은 분석하지 못했다.
 - 롤 그래디언트와 언더스티어 계수는 설계값과 대조하지 못했다.
