@@ -16,7 +16,9 @@
  *   inv_shudder_torque,inv_id_feedback,inv_iq_feedback,
  *   inv_torque_commanded,inv_torque_feedback,inv_id_command,inv_iq_command,
  *   bms_charge,bms_voltage,bms_current,bms_ccl,bms_dcl,bms_temp_max,bms_capacity,
- *   can1,can2 (1=최근 CAN 수신 / 0=끊김)
+ *   can1,can2 (1=최근 CAN 수신 / 0=끊김),*XXXX
+ *   ,*XXXX = 앞부분 전체의 CRC-16/CCITT-FALSE (line_crc.h). 주행 중 UART 단일 비트 오류가
+ *   확인되어 추가했다. 구 Pi 파서는 남는 필드를 버리므로 호환되고, 새 파서는 CRC가 틀린 줄을 버린다.
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -28,6 +30,7 @@
 #include "lis3dsh.h"
 #include "uart4_tx.h"
 #include "usart.h"
+#include "line_crc.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -318,8 +321,9 @@ static int SensorUart_FormatSample(const SensorSample_t *sample, char *buf, int 
     buf[pos++] = ',';
   }
   pos = append_int(buf, pos, cap, (int32_t)sample->can2_link);
-  if ((pos < cap) && (pos > 0))
+  if ((pos > 0) && (pos + 8 < cap))
   {
+    pos += snprintf(&buf[pos], (size_t)(cap - pos), ",*%04X", (unsigned int)LineCrc16(buf, pos));
     buf[pos++] = '\n';
     buf[pos] = '\0';
   }

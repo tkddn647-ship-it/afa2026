@@ -23,6 +23,12 @@ STM32 한 줄 형식 (CSV, \\n 종료):
   inv_torque_commanded,inv_torque_feedback,inv_id_command,inv_iq_command,
   bms_charge,bms_voltage,bms_current,bms_ccl,bms_dcl,bms_temp_maxvalue,bms_capacity,
   can1,can2
+펌웨어가 줄 끝에 ",*XXXX"(앞부분의 CRC-16/CCITT-FALSE, 16진 4자리)를 붙이면 검사한다.
+구 파서는 남는 필드를 버리므로 이 꼬리가 붙어도 그대로 동작한다.
+
+줄 무결성 (2026-11): 주행 로그에서 '0'이 '1','2','4','8'로 바뀐 단일 비트 오류가 확인됐다.
+체크섬이 없던 파서는 이런 줄을 그대로 받았고, 필드가 모자란 줄은 0으로 채워 받았다.
+LineGuard 가 CRC, 필드 수 고정, stm_ms 정수 검사로 이런 줄을 버리고 이유별로 센다.
 """
 
 from __future__ import annotations
@@ -125,6 +131,89 @@ SENSOR_KEYS_WITH_TEMP = LINEAR_KEYS + ACCEL_KEYS + (ECU_TEMP_KEY,)
 SENSOR_KEYS_WITH_STEERING = SENSOR_KEYS_WITH_TEMP + STEERING_KEYS
 BOOT_LINE_PREFIXES = ("STM_", "HB,", "LWS_CAL")
 
+# 펌웨어 형식별 필드 수 (stm_ms 포함). 이 밖의 개수는 바이트 유실·쉼표 손상으로 본다.
+KNOWN_FIELD_COUNTS = frozenset(
+    {
+        len(LEGACY_SENSOR_KEYS),
+        len(LEGACY_SENSOR_KEYS) + 1,
+        len(SENSOR_KEYS_WITH_TEMP) + 1,
+        len(SENSOR_KEYS_WITH_STEERING) + 1,
+        len(SENSOR_KEYS) + 1,
+    }
+)
+CRC_TAG = ",*"
+FORMAT_LOCK_LINES = 50      # 같은 필드 수가 이만큼 이어지면 그 형식으로 고정
+FORMAT_RELOCK_LINES = 200   # 고정 뒤 다른 필드 수가 이만큼 이어지면 펌웨어가 바뀐 것으로 보고 다시 고정
+
+
+def line_crc16(data: bytes) -> int:
+    """CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF). 펌웨어 line_crc.h 와 같은 계산."""
+    crc = 0xFFFF
+    for byte in data:
+        crc ^= byte << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
+class LineGuard:
+    """UART 한 줄이 손상 없이 왔는지 판정한다 (parse_line 앞단).
+
+    - ",*XXXX" 꼬리가 있으면 CRC 를 검사한다. 한 번이라도 맞는 CRC 를 보면 이후 꼬리 없는 줄은 버린다.
+    - 필드 수가 알려진 형식이 아니거나, 고정된 형식과 다르면 버린다 (구 파서는 0으로 채워 받았다).
+    - stm_ms 자리가 정수가 아니면 버린다.
+    """
+
+    def __init__(self) -> None:
+        self.crc_seen = False
+        self.locked_count: int | None = None
+        self._streak_count: int | None = None
+        self._streak = 0
+
+    def _track(self, n: int) -> bool:
+        if self._streak_count == n:
+            self._streak += 1
+        else:
+            self._streak_count, self._streak = n, 1
+        if self.locked_count is None:
+            if n not in KNOWN_FIELD_COUNTS:
+                return False
+            if self._streak >= FORMAT_LOCK_LINES:
+                self.locked_count = n
+            return True
+        if n == self.locked_count:
+            return True
+        if n in KNOWN_FIELD_COUNTS and self._streak >= FORMAT_RELOCK_LINES:
+            self.locked_count = n
+            return True
+        return False
+
+    def check(self, line: str) -> tuple[str | None, str]:
+        """(검사를 통과한 본문 또는 None, 사유) 를 돌려준다. 사유: ok / crc / no_crc / fields / stm."""
+        body = line.strip()
+        pos = body.rfind(CRC_TAG)
+        if pos >= 0:
+            tag = body[pos + len(CRC_TAG):]
+            body = body[:pos]
+            try:
+                ok = len(tag) == 4 and int(tag, 16) == line_crc16(body.encode("ascii", errors="ignore"))
+            except ValueError:
+                ok = False
+            if not ok:
+                return None, "crc"
+            self.crc_seen = True
+        elif self.crc_seen:
+            return None, "no_crc"
+        parts = body.split(",")
+        if not self._track(len(parts)):
+            return None, "fields"
+        if len(parts) > len(LEGACY_SENSOR_KEYS) and not parts[0].strip().isdigit():
+            return None, "stm"
+        return body, "ok"
+
+
+line_guard = LineGuard()
+
 # 수신 버퍼 (20 Hz 마다 초기화)
 data: list[dict[str, Any]] = []
 _data_lock = threading.Lock()
@@ -138,6 +227,7 @@ class UartRxStats:
         self.raw_lines = 0
         self.parsed_samples = 0
         self.parse_errors = 0
+        self.rejected: dict[str, int] = {}
         self.last_raw_line = ""
         self.last_bad_line = ""
 
@@ -156,6 +246,13 @@ class UartRxStats:
             else:
                 self.parsed_samples += 1
 
+    def on_reject(self, line: str, reason: str) -> None:
+        with self._lock:
+            self.raw_lines += 1
+            self.parse_errors += 1
+            self.rejected[reason] = self.rejected.get(reason, 0) + 1
+            self.last_bad_line = line[:120]
+
     def on_boot_line(self, line: str) -> None:
         with self._lock:
             self.raw_lines += 1
@@ -168,6 +265,7 @@ class UartRxStats:
                 "raw_lines": self.raw_lines,
                 "parsed_samples": self.parsed_samples,
                 "parse_errors": self.parse_errors,
+                "rejected": dict(self.rejected),
                 "last_raw_line": self.last_raw_line,
                 "last_bad_line": self.last_bad_line,
             }
@@ -494,7 +592,13 @@ def read_loop(
             if _uart_debug and line.strip():
                 print(f"[uart:boot] {line.strip()[:100]}")
             continue
-        sample = parse_line(line)
+        body, reason = line_guard.check(line)
+        if body is None:
+            uart_stats.on_reject(line, reason)
+            if _uart_debug:
+                print(f"[uart:{reason}] {line.strip()[:100]}")
+            continue
+        sample = parse_line(body)
         uart_stats.on_line(line, sample)
         if _uart_debug:
             tag = "ok" if sample is not None else "bad"

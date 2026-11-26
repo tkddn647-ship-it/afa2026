@@ -329,7 +329,7 @@ def print_runtime_status(sender: BatchSender, baud: int) -> None:
         )
     print(
         f"[status] uart_lines={rx['raw_lines']} parsed={rx['parsed_samples']} "
-        f"parse_err={rx['parse_errors']} sent_batches={sender.sent_batches} "
+        f"parse_err={rx['parse_errors']} rejected={rx.get('rejected', {})} sent_batches={sender.sent_batches} "
         f"sent_samples={sender.sent_samples} ingest_fail={sender.failed_batches} "
         f"pending={len(sender.pending)} resent={sender.resent_samples} "
         f"dropped={sender.dropped_samples}"
