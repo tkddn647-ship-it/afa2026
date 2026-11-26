@@ -188,7 +188,10 @@ BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 
 
 - **물리적으로 불가능한 채널만 지운다:** 포텐셔미터(펌웨어 EMA는 한 샘플만 튀었다 돌아올 수 없다), 온도·전압(느린 신호), CAN 구동값(프레임을 받을 때까지 값이 유지된다)이 대상이다. 가속도계는 실제 충격일 수 있어 남긴다. 두 행 이상 이어진 손상은 물리 한계(예: 모터 7000rpm, 모터 온도 150°C)로 거른다.
 - **비트 오류를 잡는지 확인했다:** 느린 채널에서 찾은 튐의 23~25%가 정확히 1·2·4·8×10ᵏ 크기였다. 우연히 그 크기가 될 확률은 약 1%다. 세션별 튐 비율과 2절의 비트 오류율은 순위상관 0.76(28개 세션)이다.
-- **결과:** 30개 세션 117만 행에서 값 21,134개를 지웠다(세션별 1000행당 0~56개). 예를 들어 7/31 03:45의 FR 최대값은 5002 → 34mm, 모터 회전수 최대값은 329,886 → 3,559rpm이 됐다. 지운 위치는 `clean/<세션>_scrub_mask.csv.gz`에 남긴다.
+- **결과:** 30개 세션 117만 행에서 값 21,134개를 지웠다(세션별 1000행당 0~56개). 예를 들어 7/31 03:45의 FR 최대값은 5002 → 34mm, 모터 회전수 최대값은 329,886 → 3,559rpm이 됐다. 지운 위치는 `clean/scrub_masks/`에 남긴다.
+- **결론이 바뀌는지 확인했다:** `AFA_SCRUB=1`로 정제를 켠 복사본에서 전체 파이프라인(정제 → 랩 → 코너 → 롤 → 언더스티어 → 파워트레인)을 다시 돌렸다. 정제를 켜면 필드 두 개 이상이 걸린 행은 밀린 줄로 보고 통째로 버린다. 비교는 `compare_scrubbed.py`로 했다.
+  - 코스 B(8/11~8/13)는 모든 값이 같았다. 언더스티어 K(0.0044 / 0.004)도 같고, 롤 그래디언트 변화는 0.10mm/g 이하, 효율·에너지 변화는 0.3% 이하다.
+  - 코스 A(7/31)는 최고 랩 38.66 → 38.64초, 중앙값 42.29 → 42.36초로 거의 같다. 다만 계측 랩이 16 → 15개로 하나 줄었고, 코너별 값이 최대 7%(A3 최저속), 이론상 최고는 37.95 → 37.45초로 움직였다. 비트 오류가 많은 7/31의 코너별 수치는 이 정도 불확실성을 갖는다.
 - **남는 것:** 그럴듯한 범위 안에서 작은 자리가 바뀐 값은 찾을 수 없다.
 
 ### 노면 흐름으로 슬립 재기: 이 영상으로는 안 됨
@@ -226,7 +229,7 @@ BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 
 | 카메라 센서 | `camsensor.py`, `steer_resp.py`, `yaw_gain2.py` | 카메라 요레이트 교정, 조향 응답, 언더스티어 모델 |
 | 코스·랩 | `laps.py`, `course_all.py`, `course_detail.py` | 8/13 초기 궤적(카메라 교정용), 전 세션 랩 검출, 코스·코너 분석 |
 | 콘 지도 | `cones_detect.py`, `cone_prep.py`, `cone_calib.py`, `cone_slam.py`, `cone_corners.py` | 콘 검출, 랩별 궤적과 콘 추적, 카메라 높이·지평선 교정, 랩 정렬과 지도, 코너별 트랙 폭 |
-| 추가 확인 | `ema_inverse.py`, `ema_inverse2.py`, `bms_amphours.py`, `scrub.py`, `scrub_apply.py`, `track_ground.py`, `ground_slip.py` | 펌웨어 필터 역산과 영상 대조, BMS 남은 용량과 전류 적분, 비트 오류 값 정제, 노면 흐름 |
+| 추가 확인 | `ema_inverse.py`, `ema_inverse2.py`, `bms_amphours.py`, `scrub.py`, `scrub_apply.py`, `compare_scrubbed.py`, `track_ground.py`, `ground_slip.py` | 펌웨어 필터 역산과 영상 대조, BMS 남은 용량과 전류 적분, 비트 오류 값 정제와 정제 전후 결론 비교, 노면 흐름 |
 | 그림 | `make_figs.py`, `make_fig_loss.py`, `make_frame_figs.py`, `make_fig_cone_map.py`, `make_fig_uart.py` | 보고서 그림 |
 
 ## 실행
@@ -247,6 +250,7 @@ python3 cones_detect.py $V out/cones_0813.csv          # 콘 검출 (긴 영상�
 python3 cone_prep.py && python3 cone_calib.py && python3 cone_slam.py && python3 cone_corners.py && python3 make_fig_cone_map.py
 python3 uart_integrity.py $AFA_DATA/udp_logger/logs && python3 uart_by_state.py $AFA_DATA/udp_logger/logs && python3 uart_pbit.py $AFA_DATA/udp_logger/logs
 python3 ema_inverse.py && python3 ema_inverse2.py && python3 bms_amphours.py && python3 scrub.py && python3 scrub_apply.py
+# 정제 전후 비교: 스크립트를 ../_analysis_s 로 복사해 AFA_SCRUB=1 로 clean.py, course_all.py, course_detail.py, yaw_gain2.py, rollgrad.py, postprocess.py, analysis5.py 를 다시 돌린 뒤 python3 compare_scrubbed.py
 python3 track_ground.py $V out/ground_0813_a.csv 150 330   # b: 330 440, c: 440 545, 이어서 python3 ground_slip.py
 python3 uart_sim.py "<repo>/device/raspberry pi 5" $AFA_DATA/udp_logger/logs/sensor_log_20260731_034542_245924.csv.gz out/uart_sim.csv && python3 make_fig_uart.py
 ```

@@ -8,10 +8,25 @@ def load_sensor(sid):
     if not os.path.exists(p): p = p[:-3]
     d = pd.read_csv(p, low_memory=False)
     n0 = len(d)
+    # AFA_SCRUB=1: remove bit-flip spikes and over-limit values first (scrub.py / scrub_apply.py); off by default
+    rowbad = np.zeros(len(d), bool)
+    if os.environ.get('AFA_SCRUB') == '1':
+        from scrub import spikes
+        from scrub_apply import SCRUB, LIMIT
+        o = np.argsort(pd.to_numeric(d.stm_ms, errors='coerce').values, kind='stable'); nflag = np.zeros(len(d), int)
+        for ch in SCRUB:
+            if ch not in d: continue
+            x = pd.to_numeric(d[ch], errors='coerce').values.astype(float)
+            if np.nanstd(x) == 0: continue
+            xs = x[o]; m, _ = spikes(xs, ch)
+            if ch in LIMIT: m |= np.abs(xs) > LIMIT[ch]
+            bad = np.zeros(len(x), bool); bad[o[m]] = True; x[bad] = np.nan; d[ch] = x; nflag += bad
+        # two or more flagged channels in one row = a shifted or garbled line: drop the whole row (unflagged fields are suspect too)
+        rowbad = nflag >= 2
     wall = pd.to_datetime(d.timestamp, format='%Y/%m/%d %H:%M:%S.%f', utc=True).astype('int64').values / 1e9
     s = d.stm_ms.astype(float).values
     med = pd.Series(s).rolling(41, center=True, min_periods=5).median().values
-    ok = (np.abs(s - med) < 3000) & (d[SUS].abs().max(axis=1).values < 150) & (d.x_g.abs().values < 6) & (d.y_g.abs().values < 6)
+    ok = ~rowbad & (np.abs(s - med) < 3000) & (d[SUS].abs().max(axis=1).fillna(0 if os.environ.get('AFA_SCRUB') == '1' else np.inf).values < 150) & (d.x_g.abs().values < 6) & (d.y_g.abs().values < 6)
     d = d[ok].copy(); s = s[ok]; wall = wall[ok]
     # server receive time = STM time + latency(>=0): fit slope robustly, then anchor on the low-latency envelope
     # split at STM time resets (large persistent backward jumps), fit one slope, one intercept per segment

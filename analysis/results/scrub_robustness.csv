@@ -1,0 +1,21 @@
+result,before,after
+course A best,38.66,38.64
+course A theoretical,37.95,37.45
+course A n,16,15
+course B best,75.14,75.14
+course B theoretical,73.88,73.88
+course B n,4,4
+course A median lap s,42.29,42.36
+course B median lap s,78.37,78.37
+understeer K (camera),0.0044,0.0044
+understeer K (ayv),0.004,0.004
+"front roll mm/g, max change over sessions",,0.10 mm/g
+"corner v_min, largest change",A3 25.6,"27.5 (7.4%), median change 0.0%"
+"corner ay_peak_g, largest change",A3 1.37,"1.4 (2.2%), median change 0.0%"
+"corner radius_m, largest change",A3 5.3,"5.6 (5.7%), median change 0.0%"
+"corner seg_time_best, largest change",A3 7.86,"7.49 (4.7%), median change 0.0%"
+"eff_vs_inverter_current, max change over sessions",,0.2%
+"Iinv_over_Ibms, max change over sessions",,0.3%
+"E_Wh, max change over sessions",,0.0%
+"P_p999_kW, max change over sessions",,0.2%
+"m_eff_kg_from_rpm, max change over sessions",,3.3%
