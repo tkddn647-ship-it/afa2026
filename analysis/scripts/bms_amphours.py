@@ -1,5 +1,5 @@
 """Pack Amphours from the Orion BMS (CAN 0x081 byte 1, logged as bms_capacity) against the integrated currents.
-The firmware decodes it with x1; the values (121-176 for a ~270 V Formula Student pack) only make sense as 0.1 Ah units,
+The firmware decodes it with x1; the values (121-245 for a ~270 V Formula Student pack) only make sense as 0.1 Ah units,
 so they are divided by 10 here (inference, checked against the integrated currents below)."""
 import numpy as np, pandas as pd
 from common import load_sensor
