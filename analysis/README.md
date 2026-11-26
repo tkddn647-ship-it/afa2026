@@ -10,6 +10,7 @@
 | 채널 오류 | 8/11 오후부터 FL↔RR 라벨 뒤바뀜, 7/31 03:45 세션 6분 7초에 FL 고장 |
 | 주기적 샘플 손실 5% | 원인은 서버 로그 저장 필터. 수정 후 재현 테스트 손실 0 ([log_downsample.py](../server/udp_logger/log_downsample.py)) |
 | 전송 실패 손실 | Pi가 실패한 배치를 버림. 재전송 추가 후 2초 단절 모의에서 200 → 0 샘플 |
+| 버스트 손실 (최대 60%대) | 원인은 STM→Pi UART의 비트 오류. 인버터 전류가 클수록 늘고, 체크섬이 없어 손상된 값이 그대로 기록됨. CRC-16과 줄 검사 추가 후 모의에서 틀린 값 수용 0 |
 | 카메라 요레이트 | 랩 닫힘 조건으로 자기 교정. 6랩 적분 오차 30~192m → 18~27m |
 | 코스와 랩 타임 | GPS 없이 코스 2개, 41랩 계측. 최고 38.66초(약 495m), 75.14초(약 898m) |
 | 콘 지도 | 깊이 센서 없이 8/13 영상에서 콘 312개 위치 복원. 랩 간 산포 중앙값 0.26m, 트랙 폭 중앙값 4.9m |
@@ -45,6 +46,26 @@
 Pi는 전송에 실패한 배치를 버렸다. 보관했다가 순서대로 재전송하도록 고쳤다. 테스트: `server/udp_logger/test_log_downsample.py`, `device/raspberry pi 5/test_batch_sender.py`.
 
 ![loss](figures/fig5_loss.png)
+
+### 남은 버스트 손실: UART 비트 오류
+
+주기적 손실과 전송 실패를 고친 뒤에도 7/28~7/31 세션은 손실이 10~48%였다. Pi가 새로 보내던 순번 컬럼(`batch_seq`, `uart_rx_mono_ns`)은 7/27 이후 비어 있어서, 로그에 남은 값 자체로 원인을 추적했다.
+
+![uart](figures/fig17_uart_errors.png)
+
+1. **손상된 값이 기록돼 있다.** Pi 파서는 체크섬이 없고, 필드가 모자라면 0으로 채워 받는다. 그래서 x_g 255.9g, 모터 30만 rpm 같은 값과 필드가 한 칸씩 밀린 행이 로그에 남았다.
+2. **단일 비트 오류다.** 이 차에서 항상 0인 필드(`INV_shudder_torque` 등)에 찍힌 숫자를 세면, 1758건 중 98.4%가 1·2·4·8이다. ASCII '0'(0x30)의 하위 비트 하나가 뒤집히면 정확히 이 네 숫자가 된다. 소프트웨어 버그나 바이트 유실로는 이런 분포가 나오지 않는다.
+3. **인버터 전류를 따른다.** 2초 구간별로 보면 7/28~7/31 손실이 접촉기 개방 7%, 정차 대기 21%, 저전류 주행 27%, 5~40A 46%, 40A 초과 62%다. 손상 행 비율도 같이 오른다. 세션 간 손상 행 비율과 버스트 손실의 순위상관은 0.84(7/28 이후 30개 세션)다. 고전압을 켜지 않은 7/21~7/25 벤치 세션 4개는 손실 0, 손상 행 1000행당 0.04 이하였다.
+4. **8/11부터 크게 줄었다.** 같은 40A 초과 구간에서 손실 19%, 손상 행 비율은 1000행당 21.6 → 3.6으로 약 1/6이다. 그 사이 무엇이 바뀌었는지(배선, 접지, 차폐)는 로그로 알 수 없다.
+5. **모의로 크기를 확인했다.** 로그 행을 펌웨어 자릿수 그대로 줄로 다시 만들고, 비트 오류를 넣어 Pi의 실제 파서에 통과시켰다(`uart_sim.py`). 세션별로 잰 비트 오류율(최대 약 3×10⁻⁴)에서 독립 오류만으로는 손실이 15~22%로, 실제 28~41%의 절반가량이다. 나머지는 오류가 몰려서 오는 경우(노이즈 버스트)로 보이며, 확정은 아니다. 비트 오류율이 가장 높은 세션 수준(2~3×10⁻⁴)에서는 같은 모의에서 기록된 행의 9~13%에 틀린 값이 섞였다.
+
+**클럭 여유:** UART4는 HSI(내부 RC)에서 만든 APB1 42MHz를 쓴다. HAL 분주 계산으로 921600 설정의 실제 속도는 933,333Bd(+1.27%)다. 460800이면 분주 오차는 +0.16%다. HSI 자체 오차(25°C에서 ±1%)가 더해져 수신 여유가 줄어든다. 다만 오류가 하위 비트 0~3에 고르게 나타나서, 클럭 오차보다 노이즈가 주 원인으로 보인다. `.ioc`에는 8MHz HSE 핀이 설정돼 있지만 클럭 소스는 HSI다.
+
+**수정 (재현 테스트로만 확인):**
+- 펌웨어(`sensor_uart.c`, `line_crc.h`)가 줄 끝에 `,*XXXX`(CRC-16/CCITT-FALSE)를 붙인다. 구 Pi 파서는 남는 필드를 버리므로 배포 순서와 무관하게 동작한다.
+- Pi(`Uart_stm.py`)에 `LineGuard`를 넣었다. CRC가 틀리면 버리고, 한 번 CRC를 보면 꼬리 없는 줄도 버린다. 필드 수를 고정해 잘린 줄이나 붙은 줄을 0 채움 없이 버리고, 버린 이유를 상태 출력에 센다.
+- 테스트: `device/raspberry pi 5/test_uart_line_guard.py` 9개. 펌웨어 헤더를 gcc로 컴파일해 Python CRC와 대조하고, 비트 오류율 3×10⁻⁴에서 구 파서는 틀린 행 50개 넘게, 새 경로는 0개를 받는지 확인한다.
+- 대가: 틀린 행을 버리는 만큼 기록되는 행은 줄어든다(모의에서 손실 15% → 24%, 비트 오류율 2×10⁻⁴). 손실 자체를 줄이려면 차에서 해야 하는 일이 남는다. 배선을 트위스트·차폐하고 인버터·모터 케이블에서 떼어야 하며, 보드레이트를 낮추거나 HSE로 바꾸고, 줄을 짧게(이진 형식) 만드는 방법이 있다.
 
 ## 3. 카메라를 없는 센서 대신 쓰기
 
@@ -159,12 +180,13 @@ Pi는 전송에 실패한 배치를 버렸다. 보관했다가 순서대로 재�
 | 영상 추적 | `track_pots.py`, `track_yaw.py`, `track_roll.py` | 포텐셔미터 마커, 지평선 좌우 이동, 좌우 절반 상하 이동 |
 | 동기 | `sync_check.py`, `estimate_offset.py` | 영상–로그 오프셋 (포텐셔미터 방식, 요 방식) |
 | 점검 | `session_check.py`, `loss_analysis.py`, `rollgrad.py` | 세션 점검표, 손실 분해, 라벨 교정 후 롤 응답 |
+| UART 오류 | `uart_integrity.py`, `uart_by_state.py`, `uart_pbit.py`, `uart_sim.py` | 세션별 손상 행·비트 반전, 인버터 상태별 손실, 비트 오류율, 실제 파서로 오류 모의 |
 | 정제 | `clean.py`, `fl731.py` | 정제 데이터셋, 7/31 FL을 영상으로 대체 |
 | 차량 | `analysis2.py`, `analysis3.py`, `analysis5.py` | 거동·스펙트럼, 파워트레인, 효율·질량·조향·열 |
 | 카메라 센서 | `camsensor.py`, `steer_resp.py`, `yaw_gain2.py` | 카메라 요레이트 교정, 조향 응답, 언더스티어 모델 |
 | 코스·랩 | `laps.py`, `course_all.py`, `course_detail.py` | 8/13 초기 궤적(카메라 교정용), 전 세션 랩 검출, 코스·코너 분석 |
 | 콘 지도 | `cones_detect.py`, `cone_prep.py`, `cone_calib.py`, `cone_slam.py`, `cone_corners.py` | 콘 검출, 랩별 궤적과 콘 추적, 카메라 높이·지평선 교정, 랩 정렬과 지도, 코너별 트랙 폭 |
-| 그림 | `make_figs.py`, `make_fig_loss.py`, `make_frame_figs.py`, `make_fig_cone_map.py` | 보고서 그림 |
+| 그림 | `make_figs.py`, `make_fig_loss.py`, `make_frame_figs.py`, `make_fig_cone_map.py`, `make_fig_uart.py` | 보고서 그림 |
 
 ## 실행
 
@@ -182,13 +204,16 @@ python3 course_all.py && python3 course_detail.py   # 코스·랩 타임
 V=$AFA_DATA/udp_realtime/camera_recordings/camera-20260813_001309_427966.mp4
 python3 cones_detect.py $V out/cones_0813.csv          # 콘 검출 (긴 영상은 시작·끝 초를 인자로 나눠 실행)
 python3 cone_prep.py && python3 cone_calib.py && python3 cone_slam.py && python3 cone_corners.py && python3 make_fig_cone_map.py
+python3 uart_integrity.py $AFA_DATA/udp_logger/logs && python3 uart_by_state.py $AFA_DATA/udp_logger/logs && python3 uart_pbit.py $AFA_DATA/udp_logger/logs
+python3 uart_sim.py "<repo>/device/raspberry pi 5" $AFA_DATA/udp_logger/logs/sensor_log_20260731_034542_245924.csv.gz out/uart_sim.csv && python3 make_fig_uart.py
 ```
 
 필요 패키지: `numpy`, `pandas`, `matplotlib`, `opencv-python`.
 
 ## 한계
 
-- 수정한 코드는 재현 테스트로만 검증했다. 실제 주행에서의 손실률 개선은 확인하지 못했다.
+- 수정한 코드는 재현 테스트로만 검증했다. 실제 주행에서의 손실률 개선은 확인하지 못했다. 펌웨어 CRC 변경은 호스트 gcc로 문법과 CRC 계산만 확인했고, STM32에 올려 보지는 않았다.
+- 7/28~7/31 로그의 기록된 행에도 비트 오류로 틀린 값이 섞여 있다(모의 추정으로 세션에 따라 약 1~13%, 실제 비율은 오류가 몰리는 정도에 따라 다름). 앞 분석은 중앙값·평활과 물리 범위 필터를 써서 영향이 작다고 보지만, 이 기간의 단일 샘플 값은 믿기 어렵다.
 - 영상 해상도 때문에 영상–로그 잔차가 약 2.4mm 남고, 7Hz 이상 움직임은 볼 수 없다. 픽셀→mm 환산은 로그에 맞춰 구해서 절대 크기의 독립 검증은 아니다.
 - 펌웨어가 변위에 지수이동평균(차단 약 2.3Hz)을 걸어 댐퍼 거동은 분석하지 못했다.
 - 롤 그래디언트와 언더스티어 계수는 설계값과 대조하지 못했다.
