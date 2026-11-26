@@ -15,7 +15,7 @@
 | 코스와 랩 타임 | GPS 없이 코스 2개, 41랩 계측. 최고 38.66초(약 495m), 75.14초(약 898m) |
 | 콘 지도 | 깊이 센서 없이 8/13 영상에서 콘 312개 위치 복원. 랩 간 산포 중앙값 0.26m, 트랙 폭 중앙값 4.9m |
 | 차량 특성 | 롤 1.2~1.3 deg/g(영상), 언더스티어 K 0.0034~0.0044 s²/m² |
-| 전류 센서 | 인버터 전류가 BMS 전류의 1.22~1.30배. BMS 자체 용량 카운터는 두 적분 사이(합계 0.87배 / 1.10배)라 판정 불가 |
+| 전류 센서 | 인버터 전류가 BMS 전류의 1.22~1.33배(전류 크기와 무관한 배율 차이). 인버터 매뉴얼과 대조하면 펌웨어 해석은 맞고, 인버터 전류·토크는 측정이 아닌 계산값. 어느 쪽이 맞는지는 판정 불가 |
 | 서스펜션 2Hz 이상 | 펌웨어 필터는 ±0.15mm로 역산되지만, 그 대역은 정차 중 잡음과 주행 중 신호가 비슷한 크기 |
 
 ---
@@ -171,7 +171,7 @@ Pi는 전송에 실패한 배치를 버렸다. 보관했다가 순서대로 재�
 
 ### BMS 남은 용량으로 본 전류 센서
 
-BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 읽어 121~176이 기록됐다. 0.1Ah 단위로 보면 세션 동안의 감소량이 적분 전류와 같은 크기가 된다. 그래서 0.1Ah 단위를 펌웨어가 잘못 읽은 것으로 본다(추정). SOC 필드(`bms_charge`)는 전 세션에서 0으로, 해석되지 않았다.
+BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 읽어 121~245가 기록됐다. 0.1Ah 단위로 보면 세션 동안의 감소량이 적분 전류와 같은 크기가 된다. 그래서 0.1Ah 단위를 펌웨어가 잘못 읽은 것으로 본다(추정). SOC 필드(`bms_charge`)는 전 세션에서 0으로, 해석되지 않았다.
 
 | 세션 | 남은 용량 감소 | BMS 전류 적분 | 인버터 전류 적분 |
 | --- | --- | --- | --- |
@@ -180,7 +180,18 @@ BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 
 | 8/11 08:45 | 1.4 Ah | 1.36 Ah | 1.70 Ah |
 | 8/13 00:13 | 5.3 Ah | 4.61 Ah | 5.83 Ah |
 
-네 세션 합계로 BMS 적분은 감소량의 0.87배, 인버터 적분은 1.10배다. BMS의 용량 카운터는 BMS 자신의 전류 센서로 세는 값이라 독립 기준이 아니고, 해상도도 0.1Ah다. 그래서 어느 센서가 맞는지는 여전히 판정할 수 없다. 다만 BMS가 센 방전량은 두 적분 값 사이에 있다.
+네 세션 합계로 BMS 적분은 감소량의 0.87배, 인버터 적분은 1.10배다. BMS의 용량 카운터는 BMS 자신의 전류 센서로 세는 값이라 독립 기준이 아니고, 해상도도 0.1Ah다. 그래서 어느 센서가 맞는지는 여전히 판정할 수 없다. 다만 BMS가 센 방전량은 두 적분 값 사이에 있다. 세션별로는 4개 중 2개(8/11 07:33, 08:45)에서 BMS 적분이 감소량과 3% 안으로 맞았다. 같은 센서로 센 값이니 맞는 것이 당연하고, 절대 정확도의 근거는 아니다.
+
+### 인버터 프로토콜 매뉴얼과 대조: 인버터 전류는 측정값이 아니라 계산값
+
+인버터(Cascadia Motion) CAN Protocol 5.9와 펌웨어 `can_vehicle.c`를 대조하고, 로그로 확인했다(`can_scale_check.py`, 7/28~8/13 20개 세션).
+
+1. **펌웨어 해석은 매뉴얼과 같다.** 매뉴얼은 전류·토크·고전압을 '실제 값 ×10의 부호 있는 정수, 리틀 엔디언'으로 정의하고, 펌웨어도 그대로 ×0.1로 읽는다. 1.25배 차이는 단위 실수(10배 단위)로 나올 수 있는 숫자도 아니다. 그래서 루트 README의 'CAN 스케일 계수 누락'은 인버터 쪽 근거가 없다.
+2. **인버터 DC 전류와 토크는 인버터가 계산한 값이다.** 매뉴얼은 0x0A6 DC 전류를 'calculated', 0x0AC 토크 피드백을 모터 파라미터 기반 'estimated'로 적는다. 로그도 맞는다. 토크/Iq는 모든 세션에서 0.51Nm/A, 흩어짐 0.1%로 Iq에 상수를 곱한 값이다. 토크 0으로 구르거나 서 있을 때 인버터 전류는 항상 정확히 0.0A지만, 같은 구간 BMS 전류는 −1.9~+0.5A다.
+3. **차이는 오프셋이 아니라 배율이다.** 인버터 전류 구간별 비율(인버터/BMS)은 5~20A 1.20, 20~40A 1.25, 40~80A 1.26, 80~120A 1.27, 120~200A 1.25, 200A 이상 1.23으로 거의 일정하다.
+4. **'BMS 기준 효율 약 1.2'의 힘이 약해졌다.** 이 효율은 토크 피드백×회전수를 쓴다. 토크가 Iq 비례 추정값이라, 인버터 전류로 계산해도 토크 160Nm 이상에서 효율이 1.01로 1을 넘는다. 큰 전류에서 토크 추정이 과대일 수 있다는 뜻이고, 그만큼 'BMS가 낮게 잰다'는 근거로 쓰기 어렵다.
+
+정리하면 비교 대상은 BMS의 홀 센서 측정값과 인버터의 계산값이다. 후보는 BMS 쪽 전류 센서 설정(프로필의 센서 종류·배율; Orion 배선 매뉴얼은 센서 배선을 18인치 이하로 두라고 하고 길면 정확도가 떨어진다고 적는다)과 인버터 쪽 모터 파라미터 기반 계산으로 좁혀졌지만, 어느 쪽인지는 여전히 판정할 수 없다. Orion 프로필의 전류 센서 설정, 셀 데이터시트(주행 전후 개방 전압으로 두 센서와 무관하게 Ah를 계산), 인버터에 입력한 모터 파라미터가 있었다면 판정할 수 있었다.
 
 ### 기록된 값의 비트 오류 걸러내기
 
@@ -229,7 +240,7 @@ BMS가 CAN으로 보내는 남은 용량(`bms_capacity`)은 펌웨어가 ×1로 
 | 카메라 센서 | `camsensor.py`, `steer_resp.py`, `yaw_gain2.py` | 카메라 요레이트 교정, 조향 응답, 언더스티어 모델 |
 | 코스·랩 | `laps.py`, `course_all.py`, `course_detail.py` | 8/13 초기 궤적(카메라 교정용), 전 세션 랩 검출, 코스·코너 분석 |
 | 콘 지도 | `cones_detect.py`, `cone_prep.py`, `cone_calib.py`, `cone_slam.py`, `cone_corners.py` | 콘 검출, 랩별 궤적과 콘 추적, 카메라 높이·지평선 교정, 랩 정렬과 지도, 코너별 트랙 폭 |
-| 추가 확인 | `ema_inverse.py`, `ema_inverse2.py`, `bms_amphours.py`, `scrub.py`, `scrub_apply.py`, `compare_scrubbed.py`, `track_ground.py`, `ground_slip.py` | 펌웨어 필터 역산과 영상 대조, BMS 남은 용량과 전류 적분, 비트 오류 값 정제와 정제 전후 결론 비교, 노면 흐름 |
+| 추가 확인 | `ema_inverse.py`, `ema_inverse2.py`, `bms_amphours.py`, `can_scale_check.py`, `scrub.py`, `scrub_apply.py`, `compare_scrubbed.py`, `track_ground.py`, `ground_slip.py` | 펌웨어 필터 역산과 영상 대조, BMS 남은 용량과 전류 적분, 인버터 매뉴얼 대조, 비트 오류 값 정제와 정제 전후 결론 비교, 노면 흐름 |
 | 그림 | `make_figs.py`, `make_fig_loss.py`, `make_frame_figs.py`, `make_fig_cone_map.py`, `make_fig_uart.py` | 보고서 그림 |
 
 ## 실행
@@ -249,7 +260,7 @@ V=$AFA_DATA/udp_realtime/camera_recordings/camera-20260813_001309_427966.mp4
 python3 cones_detect.py $V out/cones_0813.csv          # 콘 검출 (긴 영상은 시작·끝 초를 인자로 나눠 실행)
 python3 cone_prep.py && python3 cone_calib.py && python3 cone_slam.py && python3 cone_corners.py && python3 make_fig_cone_map.py
 python3 uart_integrity.py $AFA_DATA/udp_logger/logs && python3 uart_by_state.py $AFA_DATA/udp_logger/logs && python3 uart_pbit.py $AFA_DATA/udp_logger/logs
-python3 ema_inverse.py && python3 ema_inverse2.py && python3 bms_amphours.py && python3 scrub.py && python3 scrub_apply.py
+python3 ema_inverse.py && python3 ema_inverse2.py && python3 bms_amphours.py && python3 can_scale_check.py && python3 scrub.py && python3 scrub_apply.py
 # 정제 전후 비교: 스크립트를 ../_analysis_s 로 복사해 AFA_SCRUB=1 로 clean.py, course_all.py, course_detail.py, yaw_gain2.py, rollgrad.py, postprocess.py, analysis5.py 를 다시 돌린 뒤 python3 compare_scrubbed.py
 python3 track_ground.py $V out/ground_0813_a.csv 150 330   # b: 330 440, c: 440 545, 이어서 python3 ground_slip.py
 python3 uart_sim.py "<repo>/device/raspberry pi 5" $AFA_DATA/udp_logger/logs/sensor_log_20260731_034542_245924.csv.gz out/uart_sim.csv && python3 make_fig_uart.py
@@ -268,4 +279,4 @@ python3 uart_sim.py "<repo>/device/raspberry pi 5" $AFA_DATA/udp_logger/logs/sen
 - 콘 지도의 절대 크기는 모터 회전수 기반 차속에서 온다. 카메라 높이 1.76m는 실측이 아니라 맞춘 값이고, 차속이 크게 잡히면 높이도 같은 비율로 크게 나온다. 실제 장착 높이를 재면 차속 환산(타이어 외경 460mm, 감속비 3.9)을 독립적으로 검증할 수 있다.
 - 콘 지도는 랩마다 품질이 다르다. 각 랩의 검출이 지도 콘 1m 안에 들어오는 비율이 랩 1 52%, 랩 2 67%, 랩 3 71%, 랩 5 35%다. 메인 직선처럼 콘이 드문 구간은 정렬 기준이 없어 궤적이 랩마다 수 m 벌어진다.
 - 녹화 설정(854×480, 15fps)이 `rtsp_publish.sh` 기본값(1280×720, 30fps)과 다르다. 실제 값은 저장소에 없는 `stm_ingest.env`에서 정해진 것으로 보인다.
-- 인버터 전류 1.25 보정은 어느 센서에 적용해야 하는지 검증되지 않았다. 루트 README의 다이나모 대조(계측 90 km/h, 다이나모 87 km/h, 약 3.4%)는 모터 회전수 기반 차속이 약 3% 크다는 위 추정과 방향·크기가 맞지만, 한 점 비교라 확정은 아니다.
+- 인버터 전류 1.25 보정은 어느 센서에 적용해야 하는지 검증되지 않았다. 인버터 CAN 해석은 매뉴얼과 같아서 'CAN 스케일 누락'이라는 원래 설명도 맞지 않는다(6절). 루트 README의 다이나모 대조(계측 90 km/h, 다이나모 87 km/h, 약 3.4%)는 모터 회전수 기반 차속이 약 3% 크다는 위 추정과 방향·크기가 맞지만, 한 점 비교라 확정은 아니다.
