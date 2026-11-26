@@ -1,0 +1,28 @@
+name: unit-tests
+
+# 차량·장비 없이 돌릴 수 있는 재현 테스트만 실행한다.
+#  - 서버 로그 저장 필터 (주기적 손실 5%)
+#  - Pi 배치 재전송 (전송 실패 유실)
+#  - UART 줄 검사 + 펌웨어 CRC 헤더(gcc로 호스트 빌드)
+# test_ingest_v2.py는 서버 의존성(websockets, FastAPI 등)이 필요해 여기서 제외한다.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Pi dependencies
+        run: pip install -r "device/raspberry pi 5/requirements-stm.txt"
+      - name: Server log filter
+        working-directory: server/udp_logger
+        run: python -m unittest -v test_log_downsample
+      - name: Pi batch sender and UART line guard
+        working-directory: "device/raspberry pi 5"
+        run: python -m unittest -v test_batch_sender test_uart_line_guard
